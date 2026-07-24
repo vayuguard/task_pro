@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "dev:free": "powershell -NoProfile -Command \"foreach ($p in 3100,24678,24679) { Get-NetTCPConnection -LocalPort $p -EA SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -EA SilentlyContinue } }; Write-Host 'Ports freed.'\"",
@@ -31,6 +34,9 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^6.2.3"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.62.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
