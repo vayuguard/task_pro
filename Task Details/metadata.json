@@ -1,0 +1,6 @@
+{
+  "name": "TaskPro Enterprise",
+  "description": "An enterprise task management system with multi-factor authentication details, interactive Kanban board, performance charts, employee logs, and real-time feel team chat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

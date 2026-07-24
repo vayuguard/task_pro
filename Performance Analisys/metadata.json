@@ -1,0 +1,6 @@
+{
+  "name": "TaskPro Enterprise",
+  "description": "A high-performance modern corporate task management, collaboration, and performance analytics dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
