@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { connectDb, DB_NAME } from './server/db.ts';
@@ -11,7 +12,10 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3100;
-const isProd = process.env.NODE_ENV === 'production';
+const dist = path.join(__dirname, 'dist');
+const distReady = fs.existsSync(path.join(dist, 'index.html'));
+// Prefer built assets whenever dist exists (PM2 sometimes omits NODE_ENV)
+const isProd = process.env.NODE_ENV === 'production' || distReady;
 
 async function start() {
   const app = express();
@@ -28,22 +32,29 @@ async function start() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        // Avoid fixed HMR websocket port collisions when another Vite is running
         hmr: { port: Number(process.env.HMR_PORT) || 24679 }
       },
       appType: 'spa'
     });
     app.use(vite.middlewares);
   } else {
-    const dist = path.join(__dirname, 'dist');
+    if (!distReady) {
+      console.error('[server] dist/ missing. Run: npm run build');
+    }
     app.use(express.static(dist));
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(dist, 'index.html'));
+      const indexFile = path.join(dist, 'index.html');
+      if (!fs.existsSync(indexFile)) {
+        res.status(500).send('Frontend not built. Run npm run build on the server.');
+        return;
+      }
+      res.sendFile(indexFile);
     });
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[server] TaskPro running on http://localhost:${PORT}`);
+    console.log(`[server] Mode: ${isProd ? 'production (serving dist)' : 'development (vite)'}`);
     console.log(`[server] MongoDB database: ${DB_NAME}`);
     console.log(`[server] API: http://localhost:${PORT}/api/health`);
   });
@@ -53,7 +64,9 @@ async function start() {
       console.error(`\n[server] Port ${PORT} is already in use.`);
       console.error(`[server] Another TaskPro/Vite instance is probably still running.`);
       console.error(`[server] Fix (PowerShell):`);
-      console.error(`  Get-NetTCPConnection -LocalPort ${PORT} | Select-Object OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`);
+      console.error(
+        `  Get-NetTCPConnection -LocalPort ${PORT} | Select-Object OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
+      );
       console.error(`  npm run dev\n`);
       process.exit(1);
     }

@@ -15,7 +15,7 @@
     "build": "vite build",
     "build:server": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=dist/server.js",
     "start": "NODE_ENV=production tsx server.ts",
-    "start:pm2": "pm2 start ecosystem.config.cjs",
+    "start:pm2": "pm2 delete taskpro --silent || true; pm2 start ecosystem.config.cjs && pm2 save",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",

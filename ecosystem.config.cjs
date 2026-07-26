@@ -4,6 +4,7 @@
  *
  * Usage:
  *   npm run build
+ *   pm2 delete taskpro
  *   pm2 start ecosystem.config.cjs
  *   pm2 save
  */
@@ -11,8 +12,8 @@ module.exports = {
   apps: [
     {
       name: 'taskpro',
-      script: 'npx',
-      args: 'tsx server.ts',
+      script: './node_modules/.bin/tsx',
+      args: 'server.ts',
       cwd: __dirname,
       instances: 1,
       exec_mode: 'fork',
