@@ -269,6 +269,8 @@ function AppShell() {
             employees={employees}
             progressLogs={progressLogs}
             projectsHealth={health}
+            teamMembers={teamMembers}
+            onTaskSelect={handleSelectTask}
           />
         );
       case 'team-chat':

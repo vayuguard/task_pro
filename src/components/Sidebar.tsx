@@ -21,7 +21,7 @@ const ALL_MENU_ITEMS: { id: ActiveScreen; label: string; icon: string }[] = [
   { id: 'employee-dashboard', label: 'My Stuff', icon: 'person_check' },
   { id: 'kanban-board', label: 'Board', icon: 'view_kanban' },
   { id: 'task-details', label: 'Deep Dive', icon: 'assignment' },
-  { id: 'performance', label: 'Stats', icon: 'insights' },
+  { id: 'performance', label: 'Team Stats', icon: 'insights' },
   { id: 'team-chat', label: 'Chat', icon: 'forum' }
 ];
 

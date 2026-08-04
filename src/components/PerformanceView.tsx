@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Task, EmployeeMetrics, ProgressLog, ProjectHealth, User } from '../types';
+import { Task, EmployeeMetrics, ProgressLog, ProjectHealth, User, TaskStatus } from '../types';
 import { PageHeader, StatCard, GlassPanel } from './ui/Glass';
 import { staggerContainer, staggerItem } from './ui/motion';
-import { enrichUserWithEmail } from '../utils/tasks';
+import { enrichUserWithEmail, isTaskAssignedToUser } from '../utils/tasks';
 import { TASK_PRIORITIES, priorityBadgeClass, priorityRank } from '../utils/priority';
 import { hoursPct, roundHours } from '../utils/time';
 
@@ -12,7 +12,30 @@ interface PerformanceViewProps {
   employees: EmployeeMetrics[];
   progressLogs: ProgressLog[];
   projectsHealth: ProjectHealth[];
+  teamMembers?: User[];
+  onTaskSelect?: (task: Task) => void;
 }
+
+type PersonRow = {
+  key: string;
+  name: string;
+  email?: string;
+  avatar: string;
+  role?: string;
+  tasks: number;
+  done: number;
+  inProgress: number;
+  todo: number;
+  review: number;
+  logged: number;
+  estimated: number;
+  overdue: number;
+  highestOpen: number;
+  dueSoon: number;
+  completionPct: number;
+  used: number;
+  remaining: number;
+};
 
 function personKey(u: User) {
   return (u.email || u.name).toLowerCase();
@@ -23,16 +46,27 @@ function parseDue(due: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export default function PerformanceView({ tasks, progressLogs }: PerformanceViewProps) {
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((t) => t.status === 'Done').length;
-  const inProgress = tasks.filter((t) => t.status === 'In Progress' || t.status === 'Review').length;
-  const totalHoursLogged = roundHours(tasks.reduce((sum, t) => sum + (t.timeLogged || 0), 0));
-  const totalHoursEstimated = roundHours(tasks.reduce((sum, t) => sum + (t.timeEstimated || 0), 0));
-  const remainingHours = Math.max(roundHours(totalHoursEstimated - totalHoursLogged), 0);
-  const budgetUsedPct = hoursPct(totalHoursLogged, totalHoursEstimated);
-  const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const overBudget = tasks.filter((t) => t.timeLogged > t.timeEstimated && t.timeEstimated > 0);
+function statusBadgeClass(status: TaskStatus): string {
+  switch (status) {
+    case 'Done':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'In Progress':
+      return 'bg-sky-100 text-sky-700';
+    case 'Review':
+      return 'bg-fuchsia-100 text-fuchsia-700';
+    default:
+      return 'bg-slate-100 text-slate-600';
+  }
+}
+
+export default function PerformanceView({
+  tasks,
+  progressLogs,
+  teamMembers = [],
+  onTaskSelect
+}: PerformanceViewProps) {
+  const [selectedKey, setSelectedKey] = useState<string>('all');
+  const [workFilter, setWorkFilter] = useState<'all' | TaskStatus | 'overdue'>('all');
 
   const today = useMemo(() => {
     const d = new Date();
@@ -40,42 +74,155 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
     return d;
   }, []);
 
+  const in7 = useMemo(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 7);
+    return d;
+  }, [today]);
+
+  const peopleStats: PersonRow[] = useMemo(() => {
+    const map = new Map<string, PersonRow>();
+
+    const ensure = (u: User) => {
+      const a = enrichUserWithEmail(u);
+      const key = personKey(a);
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          name: a.name,
+          email: a.email,
+          avatar: a.avatar,
+          role: a.role,
+          tasks: 0,
+          done: 0,
+          inProgress: 0,
+          todo: 0,
+          review: 0,
+          logged: 0,
+          estimated: 0,
+          overdue: 0,
+          highestOpen: 0,
+          dueSoon: 0,
+          completionPct: 0,
+          used: 0,
+          remaining: 0
+        });
+      }
+      return map.get(key)!;
+    };
+
+    for (const member of teamMembers) {
+      ensure(member);
+    }
+
+    for (const task of tasks) {
+      const row = ensure(task.assignee);
+      row.tasks += 1;
+      if (task.status === 'Done') row.done += 1;
+      else if (task.status === 'In Progress') row.inProgress += 1;
+      else if (task.status === 'Review') row.review += 1;
+      else if (task.status === 'To Do') row.todo += 1;
+      row.logged += task.timeLogged || 0;
+      row.estimated += task.timeEstimated || 0;
+
+      const due = parseDue(task.dueDate);
+      if (task.status !== 'Done' && due && due < today) row.overdue += 1;
+      if (task.status !== 'Done' && due && due >= today && due <= in7) row.dueSoon += 1;
+      if (task.status !== 'Done' && (task.priority === 'Highest' || task.priority === 'High')) {
+        row.highestOpen += 1;
+      }
+    }
+
+    return [...map.values()]
+      .map((p) => ({
+        ...p,
+        logged: roundHours(p.logged),
+        estimated: roundHours(p.estimated),
+        remaining: Math.max(roundHours(p.estimated - p.logged), 0),
+        completionPct: p.tasks > 0 ? Math.round((p.done / p.tasks) * 100) : 0,
+        used: hoursPct(p.logged, p.estimated)
+      }))
+      .sort((a, b) => b.logged - a.logged || a.name.localeCompare(b.name));
+  }, [tasks, teamMembers, today, in7]);
+
+  const selectedPerson = selectedKey === 'all' ? null : peopleStats.find((p) => p.key === selectedKey) || null;
+
+  const scopedTasks = useMemo(() => {
+    if (!selectedPerson) return tasks;
+    const user: User = {
+      name: selectedPerson.name,
+      email: selectedPerson.email,
+      avatar: selectedPerson.avatar,
+      role: selectedPerson.role
+    };
+    return tasks.filter((t) => isTaskAssignedToUser(t, user));
+  }, [tasks, selectedPerson]);
+
+  const scopedLogs = useMemo(() => {
+    if (!selectedPerson) return progressLogs;
+    const name = selectedPerson.name.toLowerCase();
+    const taskIds = new Set(scopedTasks.map((t) => t.id));
+    return progressLogs.filter(
+      (l) => l.author.toLowerCase() === name || taskIds.has(l.taskId)
+    );
+  }, [progressLogs, selectedPerson, scopedTasks]);
+
+  const filteredWork = useMemo(() => {
+    return scopedTasks.filter((t) => {
+      if (workFilter === 'all') return true;
+      if (workFilter === 'overdue') {
+        if (t.status === 'Done') return false;
+        const due = parseDue(t.dueDate);
+        return due ? due < today : false;
+      }
+      return t.status === workFilter;
+    });
+  }, [scopedTasks, workFilter, today]);
+
+  const totalTasks = scopedTasks.length;
+  const completedTasks = scopedTasks.filter((t) => t.status === 'Done').length;
+  const inProgress = scopedTasks.filter((t) => t.status === 'In Progress' || t.status === 'Review').length;
+  const totalHoursLogged = roundHours(scopedTasks.reduce((sum, t) => sum + (t.timeLogged || 0), 0));
+  const totalHoursEstimated = roundHours(scopedTasks.reduce((sum, t) => sum + (t.timeEstimated || 0), 0));
+  const remainingHours = Math.max(roundHours(totalHoursEstimated - totalHoursLogged), 0);
+  const budgetUsedPct = hoursPct(totalHoursLogged, totalHoursEstimated);
+  const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const overBudget = scopedTasks.filter((t) => t.timeLogged > t.timeEstimated && t.timeEstimated > 0);
+
   const overdueOpen = useMemo(
     () =>
-      tasks.filter((t) => {
+      scopedTasks.filter((t) => {
         if (t.status === 'Done') return false;
         const due = parseDue(t.dueDate);
         return due ? due < today : false;
       }),
-    [tasks, today]
+    [scopedTasks, today]
   );
 
   const dueSoon = useMemo(
     () =>
-      tasks.filter((t) => {
+      scopedTasks.filter((t) => {
         if (t.status === 'Done') return false;
         const due = parseDue(t.dueDate);
         if (!due || due < today) return false;
-        const in7 = new Date(today);
-        in7.setDate(in7.getDate() + 7);
         return due <= in7;
       }),
-    [tasks, today]
+    [scopedTasks, today, in7]
   );
 
   const statusBreakdown = useMemo(() => {
     const order = ['To Do', 'In Progress', 'Review', 'Done'] as const;
     return order.map((status) => ({
       status,
-      count: tasks.filter((t) => t.status === status).length,
-      hours: roundHours(tasks.filter((t) => t.status === status).reduce((s, t) => s + t.timeEstimated, 0)),
-      logged: roundHours(tasks.filter((t) => t.status === status).reduce((s, t) => s + t.timeLogged, 0))
+      count: scopedTasks.filter((t) => t.status === status).length,
+      hours: roundHours(scopedTasks.filter((t) => t.status === status).reduce((s, t) => s + t.timeEstimated, 0)),
+      logged: roundHours(scopedTasks.filter((t) => t.status === status).reduce((s, t) => s + t.timeLogged, 0))
     }));
-  }, [tasks]);
+  }, [scopedTasks]);
 
   const priorityBreakdown = useMemo(() => {
     return TASK_PRIORITIES.map((priority) => {
-      const list = tasks.filter((t) => t.priority === priority);
+      const list = scopedTasks.filter((t) => t.priority === priority);
       const open = list.filter((t) => t.status !== 'Done');
       return {
         priority,
@@ -86,100 +233,148 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
         spent: roundHours(list.reduce((s, t) => s + t.timeLogged, 0))
       };
     });
-  }, [tasks]);
+  }, [scopedTasks]);
 
-  const peopleStats = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        name: string;
-        avatar: string;
-        role?: string;
-        tasks: number;
-        done: number;
-        logged: number;
-        estimated: number;
-        overdue: number;
-        highestOpen: number;
+  const recentActivity = useMemo(() => {
+    const rows: { id: string; taskId: string; taskTitle: string; content: string; timestamp: string; user: string; type: string }[] = [];
+    for (const task of scopedTasks) {
+      for (const act of task.activity || []) {
+        rows.push({
+          id: `${task.id}-${act.id}`,
+          taskId: task.id,
+          taskTitle: task.title,
+          content: act.content,
+          timestamp: act.timestamp,
+          user: act.user?.name || 'Unknown',
+          type: act.type
+        });
       }
-    >();
-
-    for (const task of tasks) {
-      const a = enrichUserWithEmail(task.assignee);
-      const key = personKey(a);
-      const row = map.get(key) || {
-        name: a.name,
-        avatar: a.avatar,
-        role: a.role,
-        tasks: 0,
-        done: 0,
-        logged: 0,
-        estimated: 0,
-        overdue: 0,
-        highestOpen: 0
-      };
-      row.tasks += 1;
-      if (task.status === 'Done') row.done += 1;
-      row.logged += task.timeLogged || 0;
-      row.estimated += task.timeEstimated || 0;
-      const due = parseDue(task.dueDate);
-      if (task.status !== 'Done' && due && due < today) row.overdue += 1;
-      if (task.status !== 'Done' && (task.priority === 'Highest' || task.priority === 'High')) {
-        row.highestOpen += 1;
-      }
-      map.set(key, row);
     }
-
-    return [...map.values()]
-      .map((p) => ({
-        ...p,
-        logged: roundHours(p.logged),
-        estimated: roundHours(p.estimated),
-        completionPct: p.tasks > 0 ? Math.round((p.done / p.tasks) * 100) : 0,
-        used: hoursPct(p.logged, p.estimated)
-      }))
-      .sort((a, b) => b.logged - a.logged);
-  }, [tasks, today]);
-
-  const taskEffort = useMemo(() => {
-    return [...tasks]
-      .filter((t) => t.timeEstimated > 0 || t.timeLogged > 0)
-      .sort((a, b) => b.timeLogged - a.timeLogged || priorityRank(b.priority) - priorityRank(a.priority))
-      .slice(0, 10);
-  }, [tasks]);
-
-  const priorityQueue = useMemo(() => {
-    return [...tasks]
-      .filter((t) => t.status !== 'Done')
-      .sort((a, b) => {
-        const pr = priorityRank(b.priority) - priorityRank(a.priority);
-        if (pr !== 0) return pr;
-        const da = parseDue(a.dueDate)?.getTime() ?? Infinity;
-        const db = parseDue(b.dueDate)?.getTime() ?? Infinity;
-        return da - db;
-      })
-      .slice(0, 8);
-  }, [tasks]);
+    return rows.slice(0, 40);
+  }, [scopedTasks]);
 
   const maxStatusCount = Math.max(...statusBreakdown.map((s) => s.count), 1);
   const maxPriorityCount = Math.max(...priorityBreakdown.map((p) => p.count), 1);
   const maxPersonLogged = Math.max(...peopleStats.map((p) => p.logged), 1);
 
-  const avgEstimate =
-    totalTasks > 0 ? roundHours(totalHoursEstimated / totalTasks) : 0;
-  const avgLoggedOnDone =
-    completedTasks > 0
-      ? roundHours(
-          tasks.filter((t) => t.status === 'Done').reduce((s, t) => s + t.timeLogged, 0) / completedTasks
-        )
-      : 0;
+  const scopeLabel = selectedPerson ? selectedPerson.name : 'Entire team';
 
   return (
     <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-6 sm:gap-8">
       <PageHeader
-        title="Performance & Time"
-        subtitle="Live calculations from tasks: planned vs spent, priority load, due dates, and delivery."
+        title="Team Performance"
+        subtitle="Admin view — stats, work, and time details for every employee."
       />
+
+      {/* Employee roster selector */}
+      <GlassPanel className="p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="material-symbols-outlined text-neutral-700">badge</span>
+              Employees
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Select a person for full work & time details, or view the whole team.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedKey('all');
+              setWorkFilter('all');
+            }}
+            className={`text-xs font-bold px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-colors ${
+              selectedKey === 'all'
+                ? 'bg-black text-white border-black'
+                : 'bg-white text-slate-700 border-slate-200 hover:border-black'
+            }`}
+          >
+            All employees ({peopleStats.length})
+          </button>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+          {peopleStats.length === 0 ? (
+            <p className="text-xs text-slate-400 py-2">No employees yet. Add them in Settings.</p>
+          ) : (
+            peopleStats.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => {
+                  setSelectedKey(p.key);
+                  setWorkFilter('all');
+                }}
+                className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer transition-all ${
+                  selectedKey === p.key
+                    ? 'border-black bg-[#c8ff00]/40 shadow-[2px_2px_0_#0a0a0a]'
+                    : 'border-slate-200 bg-white/70 hover:border-slate-400'
+                }`}
+              >
+                <img
+                  src={p.avatar}
+                  alt=""
+                  className="w-8 h-8 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="text-left min-w-0">
+                  <p className="text-xs font-bold text-slate-900 truncate max-w-[120px]">{p.name}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {p.tasks} tasks · {p.logged}h spent
+                  </p>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </GlassPanel>
+
+      {selectedPerson && (
+        <GlassPanel className="p-5 sm:p-6">
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center justify-between">
+            <div className="flex items-center gap-4">
+              <img
+                src={selectedPerson.avatar}
+                alt=""
+                className="w-14 h-14 rounded-full object-cover ring-2 ring-black/10"
+                referrerPolicy="no-referrer"
+              />
+              <div>
+                <h2 className="text-lg font-black text-slate-900">{selectedPerson.name}</h2>
+                <p className="text-xs text-slate-500">
+                  {selectedPerson.role || 'Employee'}
+                  {selectedPerson.email ? ` · ${selectedPerson.email}` : ''}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {selectedPerson.done}/{selectedPerson.tasks} done · {selectedPerson.inProgress} in progress ·{' '}
+                  {selectedPerson.review} review · {selectedPerson.todo} backlog
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="liquid-glass rounded-xl px-3 py-2">
+                <p className="text-[10px] uppercase font-bold text-slate-400">Spent</p>
+                <p className="text-lg font-black text-slate-900">{selectedPerson.logged}h</p>
+              </div>
+              <div className="liquid-glass rounded-xl px-3 py-2">
+                <p className="text-[10px] uppercase font-bold text-slate-400">Planned</p>
+                <p className="text-lg font-black text-slate-900">{selectedPerson.estimated}h</p>
+              </div>
+              <div className="liquid-glass rounded-xl px-3 py-2">
+                <p className="text-[10px] uppercase font-bold text-slate-400">Used</p>
+                <p
+                  className={`text-lg font-black ${
+                    selectedPerson.used > 100 ? 'text-rose-600' : 'text-slate-900'
+                  }`}
+                >
+                  {selectedPerson.used}%
+                </p>
+              </div>
+            </div>
+          </div>
+        </GlassPanel>
+      )}
 
       <motion.div
         variants={staggerContainer}
@@ -192,7 +387,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             label="Tasks done"
             value={`${completionPct}%`}
             icon="task_alt"
-            sub={`${completedTasks} of ${totalTasks} completed`}
+            sub={`${completedTasks} of ${totalTasks} · ${scopeLabel}`}
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -201,7 +396,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             value={`${totalHoursEstimated}h`}
             icon="event_available"
             color="blue"
-            sub={`Avg ${avgEstimate}h per task`}
+            sub={`${remainingHours}h still within plan`}
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -210,7 +405,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             value={`${totalHoursLogged}h`}
             icon="timer"
             color="green"
-            sub={`${remainingHours}h still within plan`}
+            sub={`${scopedLogs.length} hour-log entries`}
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -240,7 +435,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             value={String(overdueOpen.length)}
             icon="event_busy"
             color="violet"
-            sub="Open tasks past due date"
+            sub="Open past due date"
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -249,14 +444,14 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             value={String(dueSoon.length)}
             icon="upcoming"
             color="blue"
-            sub="Open tasks approaching deadline"
+            sub="Approaching deadline"
           />
         </motion.div>
         <motion.div variants={staggerItem}>
           <StatCard
             label="Highest / High open"
             value={String(
-              tasks.filter(
+              scopedTasks.filter(
                 (t) => t.status !== 'Done' && (t.priority === 'Highest' || t.priority === 'High')
               ).length
             )}
@@ -266,11 +461,11 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
         </motion.div>
         <motion.div variants={staggerItem}>
           <StatCard
-            label="Avg spent (done)"
-            value={`${avgLoggedOnDone}h`}
-            icon="avg_pace"
+            label="People tracked"
+            value={String(peopleStats.length)}
+            icon="groups"
             color="green"
-            sub="Mean hours logged on finished tasks"
+            sub={selectedPerson ? `Focused on ${selectedPerson.name}` : 'Full roster'}
           />
         </motion.div>
       </motion.div>
@@ -281,9 +476,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             <span className="material-symbols-outlined text-[#ff3cac]">donut_large</span>
             Planned vs spent
           </h3>
-          <p className="text-[11px] text-slate-500 mb-4">
-            How much of the estimated time has been logged across the workspace.
-          </p>
+          <p className="text-[11px] text-slate-500 mb-4">{scopeLabel}</p>
           <div className="space-y-3">
             <div className="flex justify-between text-xs font-semibold">
               <span className="text-slate-600">Spent {totalHoursLogged}h</span>
@@ -297,11 +490,6 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
                 style={{ width: `${Math.min(budgetUsedPct, 100)}%` }}
               />
             </div>
-            <p className="text-[11px] text-slate-500">
-              {budgetUsedPct <= 100
-                ? `You are at ${budgetUsedPct}% of planned effort.`
-                : `Logged time is ${budgetUsedPct - 100}% over the total estimate.`}
-            </p>
           </div>
         </GlassPanel>
 
@@ -310,8 +498,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             <span className="material-symbols-outlined text-[#00e5ff]">view_kanban</span>
             Work by status
           </h3>
-          <p className="text-[11px] text-slate-500 mb-4">Task count · planned · spent</p>
-          <div className="space-y-3">
+          <div className="space-y-3 mt-3">
             {statusBreakdown.map((row) => (
               <div key={row.status}>
                 <div className="flex justify-between text-[11px] font-semibold mb-1">
@@ -336,8 +523,7 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
             <span className="material-symbols-outlined text-rose-600">priority_high</span>
             Work by priority
           </h3>
-          <p className="text-[11px] text-slate-500 mb-4">Highest · High · Medium · Low</p>
-          <div className="space-y-3">
+          <div className="space-y-3 mt-3">
             {priorityBreakdown.map((row) => (
               <div key={row.priority}>
                 <div className="flex justify-between items-center text-[11px] font-semibold mb-1 gap-2">
@@ -360,153 +546,266 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
         </GlassPanel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Full employee comparison table — always visible for admin */}
+      {!selectedPerson && (
         <GlassPanel className="p-5 sm:p-6 overflow-hidden">
           <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-            <span className="material-symbols-outlined text-neutral-700">groups</span>
-            People · time & delivery
+            <span className="material-symbols-outlined text-neutral-700">table_chart</span>
+            All employees · detailed comparison
           </h3>
           <p className="text-[11px] text-slate-500 mb-4">
-            Hours planned/spent, completion %, overdue, and open high-priority work.
+            Click a row to open that employee’s full work details.
           </p>
           {peopleStats.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-8">No tasks yet — create tasks to see people stats.</p>
+            <p className="text-xs text-slate-400 text-center py-8">No employees yet.</p>
           ) : (
-            <div className="space-y-4">
-              {peopleStats.map((p) => (
-                <div key={p.name} className="liquid-glass rounded-xl p-3">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <img
-                        src={p.avatar}
-                        alt=""
-                        className="w-8 h-8 rounded-full object-cover ring-2 ring-white/60 shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="min-w-0">
-                        <p className="font-bold text-slate-800 text-xs truncate">{p.name}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {p.done}/{p.tasks} done · {p.completionPct}%
-                          {p.overdue > 0 ? ` · ${p.overdue} overdue` : ''}
-                          {p.highestOpen > 0 ? ` · ${p.highestOpen} high+` : ''}
-                        </p>
-                      </div>
-                    </div>
-                    <span
-                      className={`text-xs font-bold shrink-0 ${
-                        p.used > 100 ? 'text-rose-600' : p.used >= 80 ? 'text-amber-600' : 'text-slate-700'
-                      }`}
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-xs min-w-[900px]">
+                <thead>
+                  <tr className="border-b border-white/40 text-left text-slate-500 uppercase tracking-wider">
+                    <th className="pb-3 font-bold">Employee</th>
+                    <th className="pb-3 font-bold">Tasks</th>
+                    <th className="pb-3 font-bold">Done</th>
+                    <th className="pb-3 font-bold">Active</th>
+                    <th className="pb-3 font-bold">Planned</th>
+                    <th className="pb-3 font-bold">Spent</th>
+                    <th className="pb-3 font-bold">Left</th>
+                    <th className="pb-3 font-bold">Used</th>
+                    <th className="pb-3 font-bold">Overdue</th>
+                    <th className="pb-3 font-bold">High+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {peopleStats.map((p) => (
+                    <tr
+                      key={p.key}
+                      onClick={() => setSelectedKey(p.key)}
+                      className="border-b border-white/30 cursor-pointer hover:bg-white/40 transition-colors"
                     >
-                      {p.used}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-semibold text-slate-500 mb-1">
-                    <span>Spent {p.logged}h</span>
-                    <span>Planned {p.estimated}h</span>
-                  </div>
-                  <div className="w-full h-2.5 rounded-full bg-white/70 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${p.used > 100 ? 'bg-rose-500' : 'bg-linear-to-r from-[#00e5ff] to-[#c8ff00]'}`}
-                      style={{ width: `${Math.min((p.logged / maxPersonLogged) * 100, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                      <td className="py-3">
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={p.avatar}
+                            alt=""
+                            className="w-7 h-7 rounded-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div>
+                            <p className="font-bold text-slate-800">{p.name}</p>
+                            <p className="text-[10px] text-slate-400">{p.role || p.email || '—'}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 font-semibold">{p.tasks}</td>
+                      <td className="py-3">
+                        <span className="bg-emerald-100/80 text-emerald-700 px-2 py-0.5 rounded-lg font-bold">
+                          {p.done} ({p.completionPct}%)
+                        </span>
+                      </td>
+                      <td className="py-3 font-semibold text-slate-700">
+                        {p.inProgress + p.review}
+                      </td>
+                      <td className="py-3 font-mono font-semibold">{p.estimated}h</td>
+                      <td className="py-3 font-mono font-semibold">{p.logged}h</td>
+                      <td className="py-3 font-mono text-slate-500">{p.remaining}h</td>
+                      <td className="py-3">
+                        <span
+                          className={`font-bold ${
+                            p.used > 100 ? 'text-rose-600' : p.used >= 80 ? 'text-amber-600' : 'text-slate-700'
+                          }`}
+                        >
+                          {p.used}%
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <span className={p.overdue > 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}>
+                          {p.overdue}
+                        </span>
+                      </td>
+                      <td className="py-3 font-semibold">{p.highestOpen}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </GlassPanel>
+      )}
 
+      {selectedKey === 'all' && (
         <GlassPanel className="p-5 sm:p-6">
           <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-            <span className="material-symbols-outlined text-neutral-700">reorder</span>
-            Priority queue
+            <span className="material-symbols-outlined text-neutral-700">monitoring</span>
+            People · effort bars
           </h3>
-          <p className="text-[11px] text-slate-500 mb-4">
-            Open work sorted by priority, then earliest due date.
-          </p>
-          <div className="space-y-2 max-h-[420px] overflow-y-auto custom-scrollbar">
-            {priorityQueue.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">No open tasks.</p>
-            ) : (
-              priorityQueue.map((task) => (
-                <div key={task.id} className="flex items-start gap-2 p-3 liquid-glass rounded-xl">
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${priorityBadgeClass(task.priority)}`}>
-                    {task.priority}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-800 line-clamp-1">{task.title}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {task.assignee.name} · {task.status} · due {task.dueDate || '—'}
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                      {task.timeLogged}h / {task.timeEstimated}h · {hoursPct(task.timeLogged, task.timeEstimated)}%
-                    </p>
+          <div className="space-y-4 mt-4">
+            {peopleStats.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setSelectedKey(p.key)}
+                className="w-full text-left liquid-glass rounded-xl p-3 cursor-pointer hover:border-black/20 border border-transparent"
+              >
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img
+                      src={p.avatar}
+                      alt=""
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-800 text-xs truncate">{p.name}</p>
+                      <p className="text-[10px] text-slate-400">
+                        {p.done}/{p.tasks} done · {p.completionPct}%
+                        {p.overdue > 0 ? ` · ${p.overdue} overdue` : ''}
+                      </p>
+                    </div>
                   </div>
+                  <span className="text-xs font-bold shrink-0">{p.used}%</span>
                 </div>
-              ))
-            )}
+                <div className="flex justify-between text-[10px] font-semibold text-slate-500 mb-1">
+                  <span>Spent {p.logged}h</span>
+                  <span>Planned {p.estimated}h</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-white/70 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${p.used > 100 ? 'bg-rose-500' : 'bg-linear-to-r from-[#00e5ff] to-[#c8ff00]'}`}
+                    style={{ width: `${Math.min((p.logged / maxPersonLogged) * 100, 100)}%` }}
+                  />
+                </div>
+              </button>
+            ))}
           </div>
         </GlassPanel>
-      </div>
+      )}
+
+      {/* Work details table */}
+      <GlassPanel className="p-5 sm:p-6 overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <span className="material-symbols-outlined text-neutral-700">work</span>
+              Work details
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {scopeLabel} — every task with time, priority, status, and due date.
+            </p>
+          </div>
+          <select
+            value={workFilter}
+            onChange={(e) => setWorkFilter(e.target.value as typeof workFilter)}
+            className="input-field text-xs font-semibold py-2 w-full sm:w-auto"
+          >
+            <option value="all">All work</option>
+            <option value="To Do">To Do</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Review">Review</option>
+            <option value="Done">Done</option>
+            <option value="overdue">Overdue only</option>
+          </select>
+        </div>
+
+        {filteredWork.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-8">No matching work items.</p>
+        ) : (
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-xs min-w-[960px]">
+              <thead>
+                <tr className="border-b border-white/40 text-left text-slate-500 uppercase tracking-wider">
+                  <th className="pb-3 font-bold">Task</th>
+                  <th className="pb-3 font-bold">Assignee</th>
+                  <th className="pb-3 font-bold">Priority</th>
+                  <th className="pb-3 font-bold">Status</th>
+                  <th className="pb-3 font-bold">Due</th>
+                  <th className="pb-3 font-bold">Planned</th>
+                  <th className="pb-3 font-bold">Spent</th>
+                  <th className="pb-3 font-bold">Used</th>
+                  <th className="pb-3 font-bold">Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredWork]
+                  .sort(
+                    (a, b) =>
+                      priorityRank(b.priority) - priorityRank(a.priority) ||
+                      (parseDue(a.dueDate)?.getTime() ?? Infinity) -
+                        (parseDue(b.dueDate)?.getTime() ?? Infinity)
+                  )
+                  .map((task) => {
+                    const pct = hoursPct(task.timeLogged, task.timeEstimated);
+                    const due = parseDue(task.dueDate);
+                    const isOverdue = task.status !== 'Done' && due && due < today;
+                    return (
+                      <tr
+                        key={task.id}
+                        onClick={() => onTaskSelect?.(task)}
+                        className={`border-b border-white/30 transition-colors ${
+                          onTaskSelect ? 'cursor-pointer hover:bg-white/50' : ''
+                        }`}
+                      >
+                        <td className="py-3 pr-3">
+                          <p className="font-bold text-slate-800 line-clamp-1 max-w-[240px]">{task.title}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{task.id}</p>
+                        </td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-1.5">
+                            <img
+                              src={task.assignee.avatar}
+                              alt=""
+                              className="w-5 h-5 rounded-full"
+                              referrerPolicy="no-referrer"
+                            />
+                            <span className="font-semibold text-slate-700">{task.assignee.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-3">
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${priorityBadgeClass(task.priority)}`}
+                          >
+                            {task.priority}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${statusBadgeClass(task.status)}`}>
+                            {task.status}
+                          </span>
+                        </td>
+                        <td className={`py-3 font-semibold ${isOverdue ? 'text-rose-600' : 'text-slate-600'}`}>
+                          {task.dueDate || '—'}
+                          {isOverdue ? ' · overdue' : ''}
+                        </td>
+                        <td className="py-3 font-mono">{task.timeEstimated}h</td>
+                        <td className="py-3 font-mono font-semibold">{task.timeLogged}h</td>
+                        <td className="py-3">
+                          <span className={pct > 100 ? 'text-rose-600 font-bold' : 'text-slate-700 font-semibold'}>
+                            {pct}%
+                          </span>
+                        </td>
+                        <td className="py-3 text-slate-500">{task.createdDate || '—'}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassPanel>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <GlassPanel className="p-5 sm:p-6">
           <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-            <span className="material-symbols-outlined text-neutral-700">analytics</span>
-            Task effort (spent / planned)
-          </h3>
-          <p className="text-[11px] text-slate-500 mb-4">Top tasks by hours logged.</p>
-          <div className="space-y-4">
-            {taskEffort.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">No time data yet.</p>
-            ) : (
-              taskEffort.map((task) => {
-                const pct = hoursPct(task.timeLogged, task.timeEstimated);
-                return (
-                  <div key={task.id} className="flex flex-col gap-1.5">
-                    <div className="flex justify-between items-start gap-2 text-xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${priorityBadgeClass(task.priority)}`}>
-                          {task.priority}
-                        </span>
-                        <span className="font-bold text-slate-800 line-clamp-1">{task.title}</span>
-                      </div>
-                      <span className="text-slate-500 font-semibold shrink-0 whitespace-nowrap">
-                        {task.timeLogged}h / {task.timeEstimated}h
-                      </span>
-                    </div>
-                    <div className="w-full h-3 rounded-lg overflow-hidden bg-white/60 border border-black/5">
-                      <div
-                        className={`h-full rounded-r ${
-                          pct > 100 ? 'bg-rose-500' : 'bg-linear-to-r from-[#ff3cac] to-[#c8ff00]'
-                        }`}
-                        style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      {task.assignee.name} · due {task.dueDate || '—'} · {pct}% of estimate
-                      {pct > 100 ? ' · over plan' : ''}
-                    </p>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </GlassPanel>
-
-        <GlassPanel className="p-5 sm:p-6">
-          <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
             <span className="material-symbols-outlined text-neutral-700">history</span>
-            Recent hour logs
+            Hour logs
           </h3>
-          <p className="text-[11px] text-slate-500 mb-4">From “Log Hours” — timestamps show when time was recorded.</p>
+          <p className="text-[11px] text-slate-500 mb-4">
+            Time entries for {scopeLabel.toLowerCase()} with timestamps and notes.
+          </p>
           <div className="space-y-3 max-h-[420px] overflow-y-auto custom-scrollbar">
-            {progressLogs.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">
-                No hours logged yet. Use <strong>Log Hours</strong> in the sidebar.
-              </p>
+            {scopedLogs.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No hours logged yet.</p>
             ) : (
-              progressLogs.map((log) => (
+              scopedLogs.map((log) => (
                 <div key={log.id} className="p-3 liquid-glass rounded-xl">
                   <div className="flex justify-between items-start mb-1 gap-2">
                     <p className="text-xs font-bold text-slate-800 line-clamp-1">{log.taskTitle}</p>
@@ -519,6 +818,42 @@ export default function PerformanceView({ tasks, progressLogs }: PerformanceView
                     {log.author} · {log.timestamp}
                   </p>
                 </div>
+              ))
+            )}
+          </div>
+        </GlassPanel>
+
+        <GlassPanel className="p-5 sm:p-6">
+          <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
+            <span className="material-symbols-outlined text-neutral-700">timeline</span>
+            Activity feed
+          </h3>
+          <p className="text-[11px] text-slate-500 mb-4">
+            Comments and status/time logs from tasks in this scope.
+          </p>
+          <div className="space-y-3 max-h-[420px] overflow-y-auto custom-scrollbar">
+            {recentActivity.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No activity yet.</p>
+            ) : (
+              recentActivity.map((act) => (
+                <button
+                  key={act.id}
+                  type="button"
+                  onClick={() => {
+                    const task = tasks.find((t) => t.id === act.taskId);
+                    if (task) onTaskSelect?.(task);
+                  }}
+                  className="w-full text-left p-3 liquid-glass rounded-xl cursor-pointer hover:bg-white/60"
+                >
+                  <div className="flex justify-between gap-2 mb-1">
+                    <p className="text-xs font-bold text-slate-800 line-clamp-1">{act.taskTitle}</p>
+                    <span className="text-[9px] font-bold uppercase text-slate-400 shrink-0">{act.type}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 line-clamp-2">
+                    <span className="font-semibold">{act.user}</span> {act.content}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">{act.timestamp}</p>
+                </button>
               ))
             )}
           </div>
