@@ -198,3 +198,13 @@ export async function apiCreateEmployee(payload: {
     body: JSON.stringify(payload)
   });
 }
+
+export async function apiDeleteEmployee(
+  employeeId: string,
+  role: string
+): Promise<{ ok: true; deleted: string; email: string | null }> {
+  const q = new URLSearchParams({ role });
+  return request(`/employees/${encodeURIComponent(employeeId)}?${q}`, {
+    method: 'DELETE'
+  });
+}

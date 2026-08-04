@@ -17,7 +17,6 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
   const self = enrichUserWithEmail(currentUser);
 
   const [title, setTitle] = useState('');
-  const [project, setProject] = useState('Website Redesign');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
   const [assignee, setAssignee] = useState<User>(self);
   const [description, setDescription] = useState('');
@@ -44,7 +43,7 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
     const newTask: Task = {
       id: `Task-${Date.now()}`,
       title: title.trim(),
-      project,
+      project: 'General',
       priority,
       status: 'To Do',
       description: description.trim() || 'No description provided.',
@@ -103,18 +102,6 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Project</label>
-              <select
-                value={project}
-                onChange={(e) => setProject(e.target.value)}
-                className="w-full input-field"
-              >
-                <option>Website Redesign</option>
-                <option>Infrastructure Setup</option>
-                <option>Mobile App Development</option>
-              </select>
-            </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
               <select

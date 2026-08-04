@@ -246,6 +246,48 @@ export function createApiRouter(): Router {
     }
   });
 
+  router.delete('/employees/:id', async (req: Request, res: Response) => {
+    try {
+      const employeeId = decodeURIComponent(req.params.id);
+      const role = String(req.query.role || req.body?.role || '').trim();
+      if (role && role !== 'admin') {
+        res.status(403).json({ ok: false, error: 'Only admin can delete employees.' });
+        return;
+      }
+
+      const db = getDb();
+      const user = await db.collection('users').findOne({ id: employeeId });
+      if (!user) {
+        res.status(404).json({ ok: false, error: 'Employee not found.' });
+        return;
+      }
+      if (user.role === 'admin') {
+        res.status(403).json({ ok: false, error: 'Cannot delete an admin account.' });
+        return;
+      }
+
+      const emailNorm = String(user.email || '').toLowerCase();
+
+      await Promise.all([
+        db.collection('users').deleteOne({ id: employeeId }),
+        db.collection('employees').deleteOne({ id: employeeId }),
+        emailNorm
+          ? db.collection('team_members').deleteMany({ email: emailNorm })
+          : Promise.resolve(),
+        emailNorm
+          ? db.collection('chat_channels').updateMany(
+              { memberEmails: emailNorm },
+              { $pull: { memberEmails: emailNorm } }
+            )
+          : Promise.resolve()
+      ]);
+
+      res.json({ ok: true, deleted: employeeId, email: emailNorm || null });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   router.get('/tasks', async (_req, res) => {
     try {
       const docs = await getDb().collection('tasks').find({}).toArray();

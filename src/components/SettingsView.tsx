@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../types';
-import { apiListEmployees, apiCreateEmployee } from '../api/client';
+import { apiListEmployees, apiCreateEmployee, apiDeleteEmployee } from '../api/client';
 import { fadeUp } from './ui/motion';
 
 interface SettingsViewProps {
@@ -28,6 +28,7 @@ export default function SettingsView({ currentUser, isAdmin, onTeamChanged }: Se
   const [password, setPassword] = useState('');
   const [jobTitle, setJobTitle] = useState('Employee');
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [emailPreview, setEmailPreview] = useState('');
 
   const showMessage = (text: string) => {
@@ -79,6 +80,28 @@ export default function SettingsView({ currentUser, isAdmin, onTeamChanged }: Se
       showMessage(err instanceof Error ? err.message : 'Failed to create employee.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDelete = async (emp: EmployeeRow) => {
+    const label = emp.profile?.name || emp.email;
+    if (
+      !window.confirm(
+        `Delete employee ${label} (${emp.email})?\n\nThey will lose login access and be removed from chat groups. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(emp.id);
+    try {
+      await apiDeleteEmployee(emp.id, 'admin');
+      showMessage(`Deleted ${label}.`);
+      loadEmployees();
+      onTeamChanged?.();
+    } catch (err) {
+      showMessage(err instanceof Error ? err.message : 'Failed to delete employee.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -154,11 +177,22 @@ export default function SettingsView({ currentUser, isAdmin, onTeamChanged }: Se
               <ul className="space-y-2">
                 {employees.map((emp) => (
                   <li key={emp.id} className="flex items-center gap-3 p-3 liquid-glass rounded-xl">
-                    <img src={emp.profile?.avatar} alt="" className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
-                    <div className="min-w-0">
+                    <img src={emp.profile?.avatar} alt="" className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-800 truncate">{emp.profile?.name}</p>
                       <p className="text-[11px] text-slate-500 font-mono truncate">{emp.id} · {emp.email}</p>
                     </div>
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.95 }}
+                      disabled={deletingId === emp.id}
+                      onClick={() => void handleDelete(emp)}
+                      className="shrink-0 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border-2 border-black bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer disabled:opacity-40 flex items-center gap-1"
+                      title="Delete employee"
+                    >
+                      <span className="material-symbols-outlined text-sm">delete</span>
+                      {deletingId === emp.id ? '…' : 'Delete'}
+                    </motion.button>
                   </li>
                 ))}
               </ul>
