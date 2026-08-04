@@ -5,7 +5,7 @@ import { PageHeader, StatCard, GlassPanel } from './ui/Glass';
 import { staggerContainer, staggerItem } from './ui/motion';
 import { enrichUserWithEmail, isTaskAssignedToUser } from '../utils/tasks';
 import { TASK_PRIORITIES, priorityBadgeClass, priorityRank } from '../utils/priority';
-import { hoursPct, roundHours } from '../utils/time';
+import { hoursPct, roundHours, resolveActivityTimestamp } from '../utils/time';
 
 interface PerformanceViewProps {
   tasks: Task[];
@@ -244,7 +244,7 @@ export default function PerformanceView({
           taskId: task.id,
           taskTitle: task.title,
           content: act.content,
-          timestamp: act.timestamp,
+          timestamp: resolveActivityTimestamp(act),
           user: act.user?.name || 'Unknown',
           type: act.type
         });

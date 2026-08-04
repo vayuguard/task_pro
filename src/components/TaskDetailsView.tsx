@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Task, User, Subtask, Attachment, Activity, TaskPriority, TaskStatus } from '../types';
-import { nowTimestamp, dueDateToInput, dueDateFromInput } from '../utils/time';
+import { nowTimestamp, dueDateToInput, dueDateFromInput, resolveActivityTimestamp } from '../utils/time';
 import { TASK_PRIORITIES, priorityBadgeClass, priorityIcon } from '../utils/priority';
 
 interface TaskDetailsViewProps {
@@ -654,6 +654,7 @@ export default function TaskDetailsView({
           <div className="space-y-6 relative before:absolute before:left-5 before:top-2 before:bottom-0 before:w-[1px] before:bg-slate-200/60 pl-1">
             {task.activity.map((act) => {
               const isComment = act.type === 'comment';
+              const stamp = resolveActivityTimestamp(act);
               return (
                 <div key={act.id} className="flex gap-4 relative z-10">
                   {/* Left Icon/Image */}
@@ -681,7 +682,7 @@ export default function TaskDetailsView({
                             <span className="font-bold text-slate-900 text-sm">{act.user.name}</span>
                             <span className="text-[10px] text-[#7c839b]">{act.user.role}</span>
                           </div>
-                          <span className="text-xs text-ink-muted">{act.timestamp}</span>
+                          <span className="text-xs text-ink-muted">{stamp}</span>
                         </div>
                         <p className="text-sm text-slate-700 leading-relaxed mb-3 whitespace-pre-wrap">
                           {act.content}
@@ -709,7 +710,7 @@ export default function TaskDetailsView({
                       <p className="text-xs text-ink-muted py-1.5">
                         <span className="font-bold text-ink">{act.user.name}</span>{' '}
                         <span>{act.content}</span> •{' '}
-                        <span className="text-[10px] text-[#76777d]">{act.timestamp}</span>
+                        <span className="text-[10px] text-[#76777d]">{stamp}</span>
                       </p>
                     )}
                   </div>

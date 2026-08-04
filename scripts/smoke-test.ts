@@ -5,7 +5,7 @@
 import { AUTH_ACCOUNTS, ADMIN_SEED, canAccessScreen, canAssignToOthers, canViewAllTasks, canManageEmployees, DEMO_MFA_CODE } from '../src/auth/auth.ts';
 import { getVisibleTasks, isTaskAssignedToUser, normalizeTasks, enrichUserWithEmail, normalizePriority } from '../src/utils/tasks.ts';
 import { TASK_PRIORITIES } from '../src/utils/priority.ts';
-import { nowTimestamp } from '../src/utils/time.ts';
+import { nowTimestamp, resolveActivityTimestamp } from '../src/utils/time.ts';
 import { Task } from '../src/types.ts';
 
 let passed = 0;
@@ -43,6 +43,10 @@ assert(TASK_PRIORITIES.length === 4, 'four priority levels');
 assert(normalizePriority('urgent') === 'Highest', 'urgent maps to Highest');
 assert(normalizePriority('Highest') === 'Highest', 'Highest is valid');
 assert(typeof nowTimestamp() === 'string' && !nowTimestamp().includes('Just now'), 'timestamps are concrete');
+assert(
+  !resolveActivityTimestamp({ id: `act-log-${Date.UTC(2026, 7, 4, 12, 30)}`, timestamp: 'Just now' }).includes('Just now'),
+  'Just now resolves to real stamp from activity id'
+);
 
 // Visibility with dynamically created employees
 const empUser = enrichUserWithEmail({

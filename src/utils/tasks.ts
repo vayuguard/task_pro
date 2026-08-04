@@ -1,5 +1,6 @@
 import { Task, TaskPriority, User, UserRole } from '../types';
 import { TASK_PRIORITIES } from './priority';
+import { isPlaceholderTimestamp, resolveActivityTimestamp } from './time';
 
 const EMAIL_BY_NAME: Record<string, string> = {
   'Marcus Wright': 'marcus@taskpro.com',
@@ -38,7 +39,7 @@ export function normalizePriority(priority: string | undefined): TaskPriority {
   return PRIORITY_ALIASES[priority.toLowerCase()] || 'Medium';
 }
 
-/** Ensure assignee has email and priority is one of the four levels */
+/** Ensure assignee has email, priority is valid, and activity stamps are real times */
 export function normalizeTask(task: Task): Task {
   let next = task;
 
@@ -51,6 +52,18 @@ export function normalizeTask(task: Task): Task {
     const email = EMAIL_BY_NAME[next.assignee.name];
     if (email) {
       next = { ...next, assignee: { ...next.assignee, email } };
+    }
+  }
+
+  if (Array.isArray(next.activity) && next.activity.length > 0) {
+    let changed = false;
+    const activity = next.activity.map((a) => {
+      if (!isPlaceholderTimestamp(a.timestamp)) return a;
+      changed = true;
+      return { ...a, timestamp: resolveActivityTimestamp(a) };
+    });
+    if (changed) {
+      next = { ...next, activity };
     }
   }
 

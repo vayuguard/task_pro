@@ -24,13 +24,6 @@ interface TeamChatViewProps {
 }
 
 const QUICK_REACTIONS = ['🔥', '✨', '👏', '💯', '❤️', '😂'];
-const BOT_REPLIES = [
-  "Sounds good! Let's lock that in.",
-  'On it — dropping a note in the sprint board.',
-  'Love that. Syncing with the rest of the crew.',
-  'Noted. Ping me if you need a second pair of eyes.',
-  'Bet. Shipping that follow-up shortly.'
-];
 
 function userKey(u: User) {
   return (u.email || u.name).toLowerCase();
@@ -93,7 +86,6 @@ export default function TeamChatView({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
-  const [typingName, setTypingName] = useState<string | null>(null);
   const [reactPickerFor, setReactPickerFor] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -238,7 +230,7 @@ export default function TeamChatView({
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages[activeChannel]?.length, typingName, activeChannel]);
+  }, [messages[activeChannel]?.length, activeChannel]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -324,29 +316,6 @@ export default function TeamChatView({
         [activeChannel]: [...(prev[activeChannel] || []), res.message]
       }));
       seenCounts.current[activeChannel] = (seenCounts.current[activeChannel] || 0) + 1;
-
-      const others = channelPeople.filter((m) => !isSameUser(m, me));
-      if (others.length > 0) {
-        const responder = others[Math.floor(Math.random() * others.length)];
-        const responderRole: UserRole =
-          (responder.role || '').toLowerCase() === 'admin' ? 'admin' : 'employee';
-        setTypingName(responder.name);
-        window.setTimeout(async () => {
-          const replyText = `@${me.name} ${BOT_REPLIES[Math.floor(Math.random() * BOT_REPLIES.length)]}`;
-          try {
-            const reply = await apiSendChatMessage(activeChannel, responder, replyText, responderRole);
-            setMessages((prev) => ({
-              ...prev,
-              [activeChannel]: [...(prev[activeChannel] || []), reply.message]
-            }));
-            seenCounts.current[activeChannel] = (seenCounts.current[activeChannel] || 0) + 1;
-          } catch {
-            /* ignore bot reply */
-          } finally {
-            setTypingName(null);
-          }
-        }, 1200 + Math.random() * 800);
-      }
     } catch (err) {
       console.error(err);
       setInputVal(text);
@@ -1042,24 +1011,6 @@ export default function TeamChatView({
                 </motion.div>
               );
             })}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {typingName && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-2 text-xs text-slate-500 mt-4 pl-10"
-              >
-                <span className="flex gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#ff3cac] animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#00e5ff] animate-bounce [animation-delay:120ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#c8ff00] animate-bounce [animation-delay:240ms]" />
-                </span>
-                <span className="font-semibold text-slate-700">{typingName}</span> is typing…
-              </motion.div>
-            )}
           </AnimatePresence>
 
           <div ref={chatBottomRef} />
