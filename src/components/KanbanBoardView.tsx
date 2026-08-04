@@ -1,6 +1,8 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Task, TaskStatus } from '../types';
+import { nowTimestamp } from '../utils/time';
+import { priorityBadgeClass } from '../utils/priority';
 import { fadeUp, staggerContainer, staggerItem } from './ui/motion';
 
 interface KanbanBoardViewProps {
@@ -44,7 +46,7 @@ export default function KanbanBoardView({
             type: 'log',
             user: task.assignee,
             content: `moved this task from "${task.status}" to "${nextStatus}"`,
-            timestamp: 'Just now'
+            timestamp: nowTimestamp()
           },
           ...task.activity
         ]
@@ -113,13 +115,7 @@ export default function KanbanBoardView({
                         {/* Tags / ID Row */}
                         <div className="flex justify-between items-center">
                           <span className="text-[9px] font-bold text-slate-400 font-mono tracking-wider">{task.id}</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                            task.priority === 'High' 
-                              ? 'bg-red-50 text-red-700' 
-                              : task.priority === 'Medium'
-                              ? 'bg-amber-50 text-amber-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${priorityBadgeClass(task.priority)}`}>
                             {task.priority}
                           </span>
                         </div>

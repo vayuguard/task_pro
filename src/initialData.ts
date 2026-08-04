@@ -85,7 +85,7 @@ export const initialProgressLogs: ProgressLog[] = [
     taskTitle: 'Implement User Auth with Multi-Factor',
     hours: 4,
     notes: 'Completed TOTP validation logic and seed generation tests.',
-    timestamp: 'Today, 9:30 AM',
+    timestamp: 'Oct 23, 2023, 9:30 AM',
     author: 'Marcus Wright'
   },
   {
@@ -94,7 +94,7 @@ export const initialProgressLogs: ProgressLog[] = [
     taskTitle: 'Integrate Stripe Payment Gateway',
     hours: 3.5,
     notes: 'Verified webhook events in sandbox and updated billing status handler.',
-    timestamp: 'Yesterday, 4:15 PM',
+    timestamp: 'Oct 22, 2023, 4:15 PM',
     author: 'Alex River'
   }
 ];
@@ -110,7 +110,7 @@ export const initialTasks: Task[] = [
     id: "Task-102",
     title: "Implement User Auth with Multi-Factor",
     project: "Website Redesign",
-    priority: "High",
+    priority: "Highest",
     status: "In Progress",
     description: "We need to enhance our current authentication flow by adding multi-factor authentication (MFA). This is a critical security requirement for our enterprise clients.\n\n* Users should be able to toggle MFA in their security settings.\n* Support for Time-based One-Time Password (TOTP) protocols (Google Authenticator, Authy).\n* Backup code generation for recovery purposes.",
     assignee: teamMembers[0], // Marcus
@@ -130,14 +130,14 @@ export const initialTasks: Task[] = [
         id: "att-1",
         name: "Security_Spec_v2.pdf",
         size: "1.4 MB",
-        added: "Yesterday",
+        added: "Oct 21, 2023",
         type: "pdf"
       },
       {
         id: "att-2",
         name: "MFA_Flow_Draft.png",
         size: "3.2 MB",
-        added: "Today",
+        added: "Oct 22, 2023",
         type: "image",
         url: "https://lh3.googleusercontent.com/aida-public/AB6AXuB5_v107coRQbNVz8zT5YMLapsIKn6878I3nnjgEhxZnCxuPNQd4VriiWM1TVxDPMsLvmHYdqgtWH8_kF25S3snjGh9gkQVkC99CzfZzt30IkgM0hytSQyva96O885wMBEkeqbCNvYw-yLBpBz4iPg1VigldVhEPAD2gEcH2yezVklCR3uX7k1Dth8pekSMWrwqn-NU5DHQzL_3I86ZcEHSf_t3HUDlGjetzxDVNBETZv3dL38CbTbqNo9dD3li-MgxW_1j-yhxJjM6"
       }
@@ -148,7 +148,7 @@ export const initialTasks: Task[] = [
         type: "comment",
         user: teamMembers[1], // Sarah
         content: "The security team has reviewed the TOTP logic. We should ensure we're using the latest crypto libraries for the seed generation.",
-        timestamp: "2 hours ago",
+        timestamp: "Oct 22, 2023, 2:15 PM",
         likes: 2
       },
       {
@@ -156,7 +156,7 @@ export const initialTasks: Task[] = [
         type: "log",
         user: teamMembers[0], // Marcus
         content: "moved this task from To Do to In Progress",
-        timestamp: "5 hours ago"
+        timestamp: "Oct 21, 2023, 11:40 AM"
       }
     ]
   },
@@ -186,7 +186,7 @@ export const initialTasks: Task[] = [
         type: "log",
         user: teamMembers[0],
         content: "marked all subtasks as complete and moved task to Done",
-        timestamp: "Yesterday"
+        timestamp: "Oct 18, 2023, 4:20 PM"
       }
     ]
   },
@@ -214,7 +214,7 @@ export const initialTasks: Task[] = [
         id: "att-103-1",
         name: "hero_sketch_concept.png",
         size: "2.1 MB",
-        added: "2 days ago",
+        added: "Oct 20, 2023",
         type: "image"
       }
     ],
@@ -224,7 +224,7 @@ export const initialTasks: Task[] = [
         type: "comment",
         user: teamMembers[3],
         content: "I will finish the Figma models by tomorrow morning so we can review before implementing.",
-        timestamp: "4 hours ago",
+        timestamp: "Oct 22, 2023, 10:05 AM",
         likes: 1
       }
     ]
@@ -255,7 +255,7 @@ export const initialTasks: Task[] = [
         type: "comment",
         user: teamMembers[2],
         content: "Webhooks have been verified in sandbox mode. Review code changes in PR #422.",
-        timestamp: "10 hours ago",
+        timestamp: "Oct 22, 2023, 8:30 AM",
         likes: 3
       }
     ]

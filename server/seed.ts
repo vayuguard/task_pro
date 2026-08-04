@@ -104,7 +104,14 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
     channel: '#general',
     sender: admin.profile,
     text: 'Welcome to TaskPro. Create employees from Settings → Team to invite your team.',
-    timestamp: 'Just now',
+    timestamp: new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }),
     reactions: {},
     createdAt: new Date()
   });

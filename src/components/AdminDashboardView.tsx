@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Task, User } from '../types';
 import { isTaskAssignedToUser, enrichUserWithEmail } from '../utils/tasks';
+import { priorityBadgeClass } from '../utils/priority';
 import { PageHeader, StatCard, GlassPanel } from './ui/Glass';
 import { staggerContainer, staggerItem } from './ui/motion';
 
@@ -25,6 +26,15 @@ export default function AdminDashboardView({
   const todo = tasks.filter((t) => t.status === 'To Do').length;
   const totalEstimated = tasks.reduce((sum, t) => sum + t.timeEstimated, 0);
   const totalLogged = tasks.reduce((sum, t) => sum + t.timeLogged, 0);
+  const highestOpen = tasks.filter((t) => t.status !== 'Done' && (t.priority === 'Highest' || t.priority === 'High')).length;
+  const overdue = tasks.filter((t) => {
+    if (t.status === 'Done') return false;
+    const d = new Date(t.dueDate);
+    if (Number.isNaN(d.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d < today;
+  }).length;
 
   const projects = Array.from(new Set(tasks.map((t) => t.project)));
   const projectStats = projects.map((proj) => {
@@ -65,8 +75,8 @@ export default function AdminDashboardView({
         <motion.div variants={staggerItem}><StatCard label="Total Tasks" value={totalTasks} icon="assessment" sub="Active scope" /></motion.div>
         <motion.div variants={staggerItem}><StatCard label="In Progress" value={inProgress} icon="autorenew" color="blue" sub={`${todo} in backlog`} /></motion.div>
         <motion.div variants={staggerItem}><StatCard label="In Review" value={inReview} icon="rate_review" color="amber" sub="Awaiting sign-off" /></motion.div>
-        <motion.div variants={staggerItem}><StatCard label="Completed" value={completed} icon="check_circle" color="green" sub={`${totalTasks > 0 ? Math.round((completed / totalTasks) * 100) : 0}% rate`} /></motion.div>
-        <motion.div variants={staggerItem} className="col-span-2 lg:col-span-1"><StatCard label="Hours spent" value={`${totalLogged}h`} icon="hourglass_empty" color="violet" sub={`of ${totalEstimated}h planned`} /></motion.div>
+        <motion.div variants={staggerItem}><StatCard label="High+ open" value={highestOpen} icon="keyboard_double_arrow_up" color="violet" sub={`${overdue} overdue`} /></motion.div>
+        <motion.div variants={staggerItem} className="col-span-2 lg:col-span-1"><StatCard label="Hours spent" value={`${totalLogged}h`} icon="hourglass_empty" color="green" sub={`of ${totalEstimated}h planned · ${completed} done`} /></motion.div>
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -163,7 +173,7 @@ export default function AdminDashboardView({
                     </div>
                   </td>
                   <td className="py-3 px-5">
-                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${task.priority === 'High' ? 'bg-red-100/80 text-red-700' : task.priority === 'Medium' ? 'bg-amber-100/80 text-amber-700' : 'bg-slate-100/80 text-slate-600'}`}>{task.priority}</span>
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${priorityBadgeClass(task.priority)}`}>{task.priority}</span>
                   </td>
                   <td className="py-3 px-5">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${task.status === 'Done' ? 'bg-emerald-100/80 text-emerald-700' : task.status === 'In Progress' ? 'bg-blue-100/80 text-blue-700' : 'bg-slate-100/80 text-slate-600'}`}>{task.status}</span>

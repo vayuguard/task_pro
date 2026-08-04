@@ -31,7 +31,7 @@ export interface Activity {
   likes?: number;
 }
 
-export type TaskPriority = 'High' | 'Medium' | 'Low';
+export type TaskPriority = 'Highest' | 'High' | 'Medium' | 'Low';
 export type TaskStatus = 'To Do' | 'In Progress' | 'Review' | 'Done';
 
 export interface Task {

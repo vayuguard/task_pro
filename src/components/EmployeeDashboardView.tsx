@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Task, User, TaskStatus, TaskPriority } from '../types';
+import { Task, User, TaskStatus } from '../types';
+import { nowTimestamp } from '../utils/time';
+import { TASK_PRIORITIES, priorityBadgeClass } from '../utils/priority';
 import { fadeUp, staggerContainer, staggerItem } from './ui/motion';
 
 interface EmployeeDashboardViewProps {
@@ -52,7 +54,7 @@ export default function EmployeeDashboardView({
           type: 'log',
           user: currentUser,
           content: `promoted status to "${nextStatus}" via quick action dashboard`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -133,9 +135,9 @@ export default function EmployeeDashboardView({
             className="input-field text-xs font-semibold py-2 w-full sm:w-auto"
           >
             <option value="All">All Priorities</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
+            {TASK_PRIORITIES.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
           </select>
         </div>
       </motion.section>
@@ -168,13 +170,7 @@ export default function EmployeeDashboardView({
                     <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase font-mono">
                       {task.id} • {task.project}
                     </span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      task.priority === 'High' 
-                        ? 'bg-red-50 text-red-700' 
-                        : task.priority === 'Medium'
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${priorityBadgeClass(task.priority)}`}>
                       {task.priority}
                     </span>
                   </div>

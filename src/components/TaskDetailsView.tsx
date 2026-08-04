@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Task, User, Subtask, Attachment, Activity, TaskPriority, TaskStatus } from '../types';
+import { nowTimestamp, dueDateToInput, dueDateFromInput } from '../utils/time';
+import { TASK_PRIORITIES, priorityBadgeClass, priorityIcon } from '../utils/priority';
 
 interface TaskDetailsViewProps {
   task: Task;
@@ -41,7 +43,7 @@ export default function TaskDetailsView({
       type: 'log',
       user: currentUser,
       content: `${sub?.completed ? 'marked' : 'completed'} subtask "${sub?.title}"`,
-      timestamp: 'Just now'
+      timestamp: nowTimestamp()
     };
 
     onUpdateTask({
@@ -71,7 +73,7 @@ export default function TaskDetailsView({
           type: 'log',
           user: currentUser,
           content: `added subtask "${newSub.title}"`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -98,7 +100,7 @@ export default function TaskDetailsView({
       type: 'comment',
       user: currentUser,
       content: commentText.trim(),
-      timestamp: 'Just now',
+      timestamp: nowTimestamp(),
       likes: 0
     };
 
@@ -145,7 +147,7 @@ export default function TaskDetailsView({
           type: 'log',
           user: currentUser,
           content: `changed status to "${status}"`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -164,7 +166,7 @@ export default function TaskDetailsView({
           type: 'log',
           user: currentUser,
           content: `updated priority to "${priority}"`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -183,7 +185,7 @@ export default function TaskDetailsView({
           type: 'log',
           user: currentUser,
           content: `reassigned task to ${user.name}`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -205,7 +207,7 @@ export default function TaskDetailsView({
           type: 'log',
           user: currentUser,
           content: `logged ${hours}h of work progress`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -263,7 +265,7 @@ export default function TaskDetailsView({
           type: 'log',
           user: currentUser,
           content: `attached file "${newAtt.name}"`,
-          timestamp: 'Just now'
+          timestamp: nowTimestamp()
         },
         ...task.activity
       ]
@@ -304,30 +306,25 @@ export default function TaskDetailsView({
                 <div className="relative">
                   <button 
                     onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer ${
-                      task.priority === 'High' 
-                        ? 'bg-red-50 text-red-700 border border-red-200' 
-                        : task.priority === 'Medium'
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : 'bg-slate-50 text-slate-700 border border-slate-200'
-                    }`}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer border ${priorityBadgeClass(task.priority)}`}
                   >
                     <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      {task.priority === 'High' ? 'priority_high' : task.priority === 'Medium' ? 'warning' : 'info'}
+                      {priorityIcon(task.priority)}
                     </span>
-                    {task.priority} Priority
+                    {task.priority}
                     <span className="material-symbols-outlined text-xs">expand_more</span>
                   </button>
 
                   {showPriorityDropdown && (
-                    <div className="absolute left-0 mt-1 w-36 liquid-glass rounded-lg shadow-md z-50 py-1 text-xs">
-                      {['High', 'Medium', 'Low'].map((prio) => (
+                    <div className="absolute left-0 mt-1 w-40 liquid-glass rounded-lg shadow-md z-50 py-1 text-xs">
+                      {TASK_PRIORITIES.map((prio) => (
                         <button
                           key={prio}
-                          onClick={() => handleChangePriority(prio as TaskPriority)}
-                          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 transition-colors cursor-pointer"
+                          onClick={() => handleChangePriority(prio)}
+                          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 transition-colors cursor-pointer flex items-center gap-2"
                         >
-                          {prio} Priority
+                          <span className="material-symbols-outlined text-sm">{priorityIcon(prio)}</span>
+                          {prio}
                         </button>
                       ))}
                     </div>
@@ -836,11 +833,25 @@ export default function TaskDetailsView({
                 <div className="flex flex-col gap-1">
                   <span className="text-xs text-ink-muted font-semibold">Due Date</span>
                   <input
-                    type="text"
-                    value={task.dueDate}
-                    onChange={(e) => onUpdateTask({ ...task, dueDate: e.target.value })}
-                    className="text-xs font-bold text-[#ba1a1a] bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:bg-slate-50 rounded"
-                    title="Click to edit date text"
+                    type="date"
+                    value={dueDateToInput(task.dueDate)}
+                    onChange={(e) =>
+                      onUpdateTask({
+                        ...task,
+                        dueDate: dueDateFromInput(e.target.value),
+                        activity: [
+                          {
+                            id: `act-log-${Date.now()}`,
+                            type: 'log',
+                            user: currentUser,
+                            content: `set due date to ${dueDateFromInput(e.target.value)}`,
+                            timestamp: nowTimestamp()
+                          },
+                          ...task.activity
+                        ]
+                      })
+                    }
+                    className="text-xs font-bold text-[#ba1a1a] bg-white border border-slate-200 rounded-lg px-2 py-1 focus:ring-1 focus:ring-slate-800 cursor-pointer"
                   />
                 </div>
               </div>

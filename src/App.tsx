@@ -8,6 +8,7 @@ import {
   defaultScreenForRole
 } from './auth/auth';
 import { getVisibleTasks, normalizeTasks, enrichUserWithEmail } from './utils/tasks';
+import { nowTimestamp } from './utils/time';
 import {
   apiBootstrap,
   apiCreateTask,
@@ -156,13 +157,14 @@ function AppShell() {
     const task = tasks.find((t) => t.id === log.taskId);
     if (!task) return;
 
+    const stamp = nowTimestamp();
     const entry: ProgressLog = {
       id: `log-${Date.now()}`,
       taskId: log.taskId,
       taskTitle: task.title,
       hours: log.hours,
       notes: log.notes,
-      timestamp: 'Just now',
+      timestamp: stamp,
       author: currentUser.name
     };
 
@@ -177,7 +179,7 @@ function AppShell() {
         type: 'log',
         user: currentUser,
         content: `logged ${log.hours}h: "${log.notes}"`,
-        timestamp: 'Just now'
+        timestamp: stamp
       }, ...task.activity]
     });
   };

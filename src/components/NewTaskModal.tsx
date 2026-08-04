@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Task, User, TaskPriority, UserRole } from '../types';
 import { enrichUserWithEmail } from '../utils/tasks';
+import { nowTimestamp, defaultDueDateInput, dueDateFromInput } from '../utils/time';
+import { TASK_PRIORITIES } from '../utils/priority';
 import { AnimatedModal } from './ui/motion';
 
 interface NewTaskModalProps {
@@ -10,18 +12,6 @@ interface NewTaskModalProps {
   currentUser: User;
   userRole: UserRole;
   teamMembers: User[];
-}
-
-function defaultDueDateInput() {
-  const d = new Date();
-  d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
-}
-
-function formatDueDisplay(isoDate: string) {
-  const d = new Date(isoDate + 'T12:00:00');
-  if (Number.isNaN(d.getTime())) return isoDate;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole, teamMembers }: NewTaskModalProps) {
@@ -68,8 +58,8 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
       description: description.trim() || 'No description provided.',
       assignee: taskAssignee,
       reporter,
-      createdDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      dueDate: formatDueDisplay(dueDateInput),
+      createdDate: dueDateFromInput(new Date().toISOString().slice(0, 10)),
+      dueDate: dueDateFromInput(dueDateInput),
       labels: ['General'],
       timeLogged: 0,
       timeEstimated: hours,
@@ -80,9 +70,9 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
         type: 'log',
         user: reporter,
         content: isAdmin
-          ? `created (${hours}h planned) and assigned to ${taskAssignee.name}`
-          : `created this task with ${hours}h planned`,
-        timestamp: 'Just now'
+          ? `created (${hours}h planned, due ${dueDateFromInput(dueDateInput)}) and assigned to ${taskAssignee.name}`
+          : `created this task with ${hours}h planned, due ${dueDateFromInput(dueDateInput)}`,
+        timestamp: nowTimestamp()
       }]
     };
 
@@ -134,9 +124,9 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
                 onChange={(e) => setPriority(e.target.value as TaskPriority)}
                 className="w-full input-field"
               >
-                <option>High</option>
-                <option>Medium</option>
-                <option>Low</option>
+                {TASK_PRIORITIES.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
               </select>
             </div>
             <div>

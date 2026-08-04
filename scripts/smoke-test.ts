@@ -3,7 +3,9 @@
  * Run: npm run test:smoke
  */
 import { AUTH_ACCOUNTS, ADMIN_SEED, canAccessScreen, canAssignToOthers, canViewAllTasks, canManageEmployees, DEMO_MFA_CODE } from '../src/auth/auth.ts';
-import { getVisibleTasks, isTaskAssignedToUser, normalizeTasks, enrichUserWithEmail } from '../src/utils/tasks.ts';
+import { getVisibleTasks, isTaskAssignedToUser, normalizeTasks, enrichUserWithEmail, normalizePriority } from '../src/utils/tasks.ts';
+import { TASK_PRIORITIES } from '../src/utils/priority.ts';
+import { nowTimestamp } from '../src/utils/time.ts';
 import { Task } from '../src/types.ts';
 
 let passed = 0;
@@ -37,6 +39,11 @@ assert(canAssignToOthers('admin'), 'admin can assign to others');
 assert(!canAssignToOthers('employee'), 'employee cannot assign to others');
 assert(canViewAllTasks('admin'), 'admin sees all tasks');
 
+assert(TASK_PRIORITIES.length === 4, 'four priority levels');
+assert(normalizePriority('urgent') === 'Highest', 'urgent maps to Highest');
+assert(normalizePriority('Highest') === 'Highest', 'Highest is valid');
+assert(typeof nowTimestamp() === 'string' && !nowTimestamp().includes('Just now'), 'timestamps are concrete');
+
 // Visibility with dynamically created employees
 const empUser = enrichUserWithEmail({
   name: 'Jane Doe',
@@ -50,7 +57,7 @@ const sampleTasks: Task[] = normalizeTasks([
     id: 'T1',
     title: 'For Jane',
     project: 'P',
-    priority: 'High',
+    priority: 'Highest',
     status: 'To Do',
     description: '',
     assignee: empUser,
@@ -88,6 +95,7 @@ const janeVisible = getVisibleTasks(sampleTasks, empUser, 'employee');
 assert(janeVisible.length === 1 && janeVisible[0].id === 'T1', 'employee only sees own tasks');
 assert(isTaskAssignedToUser(sampleTasks[0], empUser), 'email match assigns task to employee');
 assert(getVisibleTasks(sampleTasks, ADMIN_SEED.profile, 'admin').length === 2, 'admin sees all tasks');
+assert(sampleTasks[0].priority === 'Highest', 'Highest priority preserved');
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);

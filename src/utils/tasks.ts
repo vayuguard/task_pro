@@ -1,4 +1,5 @@
-import { Task, User, UserRole } from '../types';
+import { Task, TaskPriority, User, UserRole } from '../types';
+import { TASK_PRIORITIES } from './priority';
 
 const EMAIL_BY_NAME: Record<string, string> = {
   'Marcus Wright': 'marcus@taskpro.com',
@@ -6,6 +7,16 @@ const EMAIL_BY_NAME: Record<string, string> = {
   'Sarah Chen': 'ritesh.prajapati@vayuguard.com',
   'Alex River': 'alex@taskpro.com',
   'Jessica Lopez': 'jessica@taskpro.com'
+};
+
+const PRIORITY_ALIASES: Record<string, TaskPriority> = {
+  highest: 'Highest',
+  urgent: 'Highest',
+  critical: 'Highest',
+  high: 'High',
+  medium: 'Medium',
+  med: 'Medium',
+  low: 'Low'
 };
 
 /** Match task to logged-in user by email first, then name */
@@ -21,15 +32,29 @@ export function getVisibleTasks(tasks: Task[], user: User, role: UserRole): Task
   return tasks.filter((t) => isTaskAssignedToUser(t, user));
 }
 
-/** Ensure assignee has email so employee matching works after admin assignment */
+export function normalizePriority(priority: string | undefined): TaskPriority {
+  if (!priority) return 'Medium';
+  if ((TASK_PRIORITIES as string[]).includes(priority)) return priority as TaskPriority;
+  return PRIORITY_ALIASES[priority.toLowerCase()] || 'Medium';
+}
+
+/** Ensure assignee has email and priority is one of the four levels */
 export function normalizeTask(task: Task): Task {
-  if (task.assignee.email) return task;
-  const email = EMAIL_BY_NAME[task.assignee.name];
-  if (!email) return task;
-  return {
-    ...task,
-    assignee: { ...task.assignee, email }
-  };
+  let next = task;
+
+  const priority = normalizePriority(task.priority);
+  if (priority !== task.priority) {
+    next = { ...next, priority };
+  }
+
+  if (!next.assignee.email) {
+    const email = EMAIL_BY_NAME[next.assignee.name];
+    if (email) {
+      next = { ...next, assignee: { ...next.assignee, email } };
+    }
+  }
+
+  return next;
 }
 
 export function normalizeTasks(tasks: Task[]): Task[] {
