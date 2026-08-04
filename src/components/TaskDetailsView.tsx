@@ -892,37 +892,72 @@ export default function TaskDetailsView({
 
           {/* Time Tracking Progress Widget */}
           <div className="p-6 bg-[#f2f4f6]/30">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-ink-muted mb-4">
-              Time Tracking
+            <h4 className="text-xs font-bold uppercase tracking-wider text-ink-muted mb-1">
+              Time tracking
             </h4>
+            <p className="text-[10px] text-slate-500 mb-4">
+              Planned = estimate at create · Spent = hours logged while working
+            </p>
             <div className="space-y-3">
-              <div className="flex justify-between text-xs font-bold text-ink-muted">
-                <span>Logged: {task.timeLogged}h</span>
-                <span>Estimated: {task.timeEstimated}h</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-white/80 border border-black/5 p-2.5">
+                  <p className="text-[10px] text-slate-500 font-semibold">Planned</p>
+                  <input
+                    type="number"
+                    min={0.5}
+                    step={0.5}
+                    value={task.timeEstimated}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!Number.isNaN(v) && v > 0) {
+                        onUpdateTask({ ...task, timeEstimated: v });
+                      }
+                    }}
+                    className="w-full text-sm font-black text-slate-900 bg-transparent border-none p-0 focus:ring-0"
+                    title="Edit estimate (hours)"
+                  />
+                  <p className="text-[9px] text-slate-400">hours estimate</p>
+                </div>
+                <div className="rounded-xl bg-white/80 border border-black/5 p-2.5">
+                  <p className="text-[10px] text-slate-500 font-semibold">Spent</p>
+                  <p className="text-sm font-black text-slate-900">{task.timeLogged}h</p>
+                  <p className="text-[9px] text-slate-400">hours logged</p>
+                </div>
               </div>
-              
+
+              <div className="flex justify-between text-[11px] font-bold text-ink-muted">
+                <span>
+                  {task.timeEstimated > 0
+                    ? `${Math.min(Math.round((task.timeLogged / task.timeEstimated) * 100), 999)}% of plan`
+                    : 'No estimate'}
+                </span>
+                <span>
+                  {task.timeLogged > task.timeEstimated
+                    ? `${(task.timeLogged - task.timeEstimated).toFixed(1)}h over`
+                    : `${Math.max(task.timeEstimated - task.timeLogged, 0)}h left`}
+                </span>
+              </div>
+
               <div className="w-full h-2.5 bg-[#f2f4f6] rounded-full overflow-hidden flex">
                 <div
-                  className="bg-[#131b2e] h-full transition-all duration-500 ease-out"
+                  className={`h-full transition-all duration-500 ease-out ${
+                    task.timeLogged > task.timeEstimated ? 'bg-rose-500' : 'bg-[#131b2e]'
+                  }`}
                   style={{ width: `${timeTrackingPercentage}%` }}
-                ></div>
+                />
               </div>
-              
-              <p className="text-[11px] text-center text-ink-muted italic">
-                {Math.max(task.timeEstimated - task.timeLogged, 0)}h remaining based on estimate
-              </p>
             </div>
           </div>
         </section>
 
-        {/* Milestone Reference Alert */}
-        <section className="bg-blue-50 border border-blue-100 p-5 rounded-xl shadow-xs">
+        <section className="bg-[#c8ff00]/20 border-2 border-black/10 p-5 rounded-xl">
           <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined text-blue-600">info</span>
+            <span className="material-symbols-outlined text-black">tips_and_updates</span>
             <div>
-              <h5 className="text-sm font-bold text-blue-900 mb-1">Project Milestone</h5>
-              <p className="text-xs text-blue-800 leading-tight">
-                This task is part of the 'Q4 Security Audit' milestone. Completion is required for compliance sign-off.
+              <h5 className="text-sm font-bold text-slate-900 mb-1">How time works</h5>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Set an estimate when creating the task. Use <strong>Log Hours</strong> (sidebar) or log
+                from this page as you work. Performance compares planned vs spent for the whole team.
               </p>
             </div>
           </div>
@@ -933,12 +968,22 @@ export default function TaskDetailsView({
       {showLogTimeModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 animate-fade-in">
           <div className="liquid-glass rounded-xl p-4 sm:p-6 w-full max-w-sm mx-4 border border-white/50 shadow-2xl">
-            <h3 className="text-base font-bold text-slate-900 mb-2">Log Work Progress</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-2">Log hours worked</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Add hours of focused effort completed. This updates estimated progress bars immediately.
+              Enter hours you spent on this task. Spent time is compared to the planned estimate.
             </p>
+            <div className="mb-3 rounded-xl bg-slate-50 border border-slate-200 p-3 text-[11px] space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Planned</span>
+                <span className="font-bold">{task.timeEstimated}h</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Already spent</span>
+                <span className="font-bold">{task.timeLogged}h</span>
+              </div>
+            </div>
             <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1">Hours Spent</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Hours spent now</label>
               <input
                 type="number"
                 step="0.5"

@@ -89,7 +89,7 @@ export default function EmployeeDashboardView({
         {/* User stats widget */}
         <div className="flex gap-4 sm:gap-8 border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 pl-0 md:pl-8 w-full md:w-auto justify-around md:justify-start">
           <div className="text-center">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Hours Logged</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400">Hours spent</span>
             <p className="text-xl font-black text-[#131b2e] mt-1">{hoursLogged}h</p>
             <span className="text-[9px] text-slate-500">of {hoursEstimated}h planned</span>
           </div>
@@ -206,9 +206,12 @@ export default function EmployeeDashboardView({
 
                 {/* Footer Action Bar */}
                 <div className="bg-slate-50 border-t border-[#eceef0] px-5 py-3 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-500 font-semibold">
-                    <span className="material-symbols-outlined text-sm">schedule</span>
-                    <span>{task.timeLogged}h spent</span>
+                  <div className="flex flex-col gap-0.5 font-mono text-[11px] text-slate-500 font-semibold">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">schedule</span>
+                      {task.timeLogged}h spent / {task.timeEstimated}h planned
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-sans">Due {task.dueDate}</span>
                   </div>
 
                   {task.status !== 'Done' && (

@@ -12,6 +12,18 @@ interface NewTaskModalProps {
   teamMembers: User[];
 }
 
+function defaultDueDateInput() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDueDisplay(isoDate: string) {
+  const d = new Date(isoDate + 'T12:00:00');
+  if (Number.isNaN(d.getTime())) return isoDate;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole, teamMembers }: NewTaskModalProps) {
   const isAdmin = userRole === 'admin';
   const self = enrichUserWithEmail(currentUser);
@@ -20,25 +32,32 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
   const [priority, setPriority] = useState<TaskPriority>('Medium');
   const [assignee, setAssignee] = useState<User>(self);
   const [description, setDescription] = useState('');
-  const [timeEstimated, setTimeEstimated] = useState('8');
-  const [dueDate, setDueDate] = useState(
-    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric'
-    })
-  );
-  const [labelsText, setLabelsText] = useState('');
+  const [timeEstimated, setTimeEstimated] = useState('4');
+  const [dueDateInput, setDueDateInput] = useState(defaultDueDateInput());
+  const [formError, setFormError] = useState('');
+
+  const estimateHours = parseFloat(timeEstimated);
+  const estimateValid = !Number.isNaN(estimateHours) && estimateHours > 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
-
-    const labels = labelsText
-      .split(',')
-      .map((l) => l.trim())
-      .filter(Boolean);
+    setFormError('');
+    if (!title.trim()) {
+      setFormError('Title is required.');
+      return;
+    }
+    if (!estimateValid) {
+      setFormError('Enter how many hours this task should take (e.g. 2, 4.5).');
+      return;
+    }
+    if (!dueDateInput) {
+      setFormError('Pick a due date.');
+      return;
+    }
 
     const taskAssignee = isAdmin ? enrichUserWithEmail(assignee) : self;
     const reporter = self;
+    const hours = Math.round(estimateHours * 10) / 10;
 
     const newTask: Task = {
       id: `Task-${Date.now()}`,
@@ -50,10 +69,10 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
       assignee: taskAssignee,
       reporter,
       createdDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      dueDate,
-      labels: labels.length ? labels : ['General'],
+      dueDate: formatDueDisplay(dueDateInput),
+      labels: ['General'],
       timeLogged: 0,
-      timeEstimated: parseFloat(timeEstimated) || 8,
+      timeEstimated: hours,
       subtasks: [],
       attachments: [],
       activity: [{
@@ -61,8 +80,8 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
         type: 'log',
         user: reporter,
         content: isAdmin
-          ? `created and assigned to ${taskAssignee.name}`
-          : 'created this task for themselves',
+          ? `created (${hours}h planned) and assigned to ${taskAssignee.name}`
+          : `created this task with ${hours}h planned`,
         timestamp: 'Just now'
       }]
     };
@@ -80,15 +99,21 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
               {isAdmin ? 'Create & Assign Task' : 'Create Task for Myself'}
             </h3>
             {!isAdmin && (
-              <p className="text-xs text-slate-500 mt-0.5">This task will be assigned to you.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Estimate how long it will take before you start.</p>
             )}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700 cursor-pointer">
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {formError && (
+            <p className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+              {formError}
+            </p>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Title *</label>
             <input
@@ -96,7 +121,7 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title"
+              placeholder="What needs to be done?"
               className="input-field"
             />
           </div>
@@ -114,6 +139,53 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
                 <option>Low</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Due date *</label>
+              <input
+                type="date"
+                required
+                value={dueDateInput}
+                onChange={(e) => setDueDateInput(e.target.value)}
+                className="w-full input-field"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border-2 border-black/10 bg-[#c8ff00]/15 p-4 space-y-2">
+            <label className="block text-xs font-bold text-slate-800">
+              Estimated time to complete *
+            </label>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              How many hours do you think this task will take? Used to track progress when you log work later
+              (planned vs spent).
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                required
+                min={0.5}
+                step={0.5}
+                value={timeEstimated}
+                onChange={(e) => setTimeEstimated(e.target.value)}
+                className="input-field max-w-[140px] font-mono font-bold"
+                placeholder="e.g. 4"
+              />
+              <span className="text-sm font-semibold text-slate-700">hours</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {[1, 2, 4, 8].map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setTimeEstimated(String(h))}
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border-2 border-black cursor-pointer ${
+                    timeEstimated === String(h) ? 'bg-black text-white' : 'bg-white text-black hover:bg-[#c8ff00]/50'
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
           </div>
 
           {isAdmin && (
@@ -124,19 +196,19 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
                   <p className="text-xs text-slate-400 col-span-2">No team members yet. Create employees in Settings first.</p>
                 ) : (
                   teamMembers.map((member) => (
-                  <button
-                    key={member.email || member.name}
-                    type="button"
-                    onClick={() => setAssignee(member)}
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-left cursor-pointer text-sm ${
-                      assignee.name === member.name
-                        ? 'border-[#131b2e] bg-slate-50 font-semibold'
-                        : 'border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <img src={member.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
-                    <span className="truncate">{member.name}</span>
-                  </button>
+                    <button
+                      key={member.email || member.name}
+                      type="button"
+                      onClick={() => setAssignee(member)}
+                      className={`flex items-center gap-2 p-2 rounded-lg border text-left cursor-pointer text-sm ${
+                        assignee.name === member.name
+                          ? 'border-[#131b2e] bg-slate-50 font-semibold'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <img src={member.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                      <span className="truncate">{member.name}</span>
+                    </button>
                   ))
                 )}
               </div>
@@ -149,6 +221,7 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
+              placeholder="Optional details…"
               className="input-field"
             />
           </div>

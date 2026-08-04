@@ -66,7 +66,7 @@ export default function AdminDashboardView({
         <motion.div variants={staggerItem}><StatCard label="In Progress" value={inProgress} icon="autorenew" color="blue" sub={`${todo} in backlog`} /></motion.div>
         <motion.div variants={staggerItem}><StatCard label="In Review" value={inReview} icon="rate_review" color="amber" sub="Awaiting sign-off" /></motion.div>
         <motion.div variants={staggerItem}><StatCard label="Completed" value={completed} icon="check_circle" color="green" sub={`${totalTasks > 0 ? Math.round((completed / totalTasks) * 100) : 0}% rate`} /></motion.div>
-        <motion.div variants={staggerItem} className="col-span-2 lg:col-span-1"><StatCard label="Time Logged" value={`${totalLogged}h`} icon="hourglass_empty" color="violet" sub={`of ${totalEstimated}h est.`} /></motion.div>
+        <motion.div variants={staggerItem} className="col-span-2 lg:col-span-1"><StatCard label="Hours spent" value={`${totalLogged}h`} icon="hourglass_empty" color="violet" sub={`of ${totalEstimated}h planned`} /></motion.div>
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -142,7 +142,7 @@ export default function AdminDashboardView({
                 <th className="py-3 px-5">Assignee</th>
                 <th className="py-3 px-5">Priority</th>
                 <th className="py-3 px-5">Status</th>
-                <th className="py-3 px-5">Time</th>
+                <th className="py-3 px-5">Spent / Planned</th>
                 <th className="py-3 px-5 text-right">Due</th>
               </tr>
             </thead>
