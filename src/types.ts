@@ -40,6 +40,10 @@ export interface StatusTimeSegment {
   startedAt: string;
   endedAt?: string;
   durationMs: number;
+  /** Who was assignee during this segment */
+  assigneeEmail?: string;
+  /** Certified business-time ms (In Motion only) */
+  businessDurationMs?: number;
 }
 
 export interface Task {
@@ -54,8 +58,12 @@ export interface Task {
   createdDate: string;
   dueDate: string;
   labels: string[];
-  /** Auto: hours spent in In Progress (In Motion). */
+  /** Auto: hours spent in In Progress (wall clock, legacy). */
   timeLogged: number;
+  /** Certified business hours (server). */
+  timeLoggedBusiness?: number;
+  /** Wall-clock In Motion hours (server). */
+  timeLoggedWall?: number;
   timeEstimated: number;
   /** ISO — when task was created/assigned (timer not started yet). */
   assignedAt?: string;
@@ -63,6 +71,16 @@ export interface Task {
   completedAt?: string;
   /** Full record of time in each section. */
   statusHistory?: StatusTimeSegment[];
+  /** legacy = unverified backfill; certified = server-tracked transitions */
+  timingTrust?: 'legacy' | 'certified';
+  /** ISO — estimate frozen when work first enters In Motion */
+  estimateLockedAt?: string;
+  /** Optimistic concurrency */
+  version?: number;
+  /** Review outcome for quality scoring */
+  reviewOutcome?: 'accepted' | 'changes_requested';
+  /** Display only — office / wfh / hybrid */
+  workMode?: 'office' | 'wfh' | 'hybrid';
   subtasks: Subtask[];
   attachments: Attachment[];
   activity: Activity[];

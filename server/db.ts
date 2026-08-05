@@ -23,7 +23,20 @@ export async function connectDb(): Promise<Db> {
   await client.connect();
   db = client.db(DB_NAME);
   console.log(`[mongo] Connected to database "${DB_NAME}"`);
+  await ensureIndexes(db);
   return db;
+}
+
+async function ensureIndexes(database: Db): Promise<void> {
+  await Promise.all([
+    database.collection('users').createIndex({ email: 1 }, { unique: true }),
+    database.collection('users').createIndex({ id: 1 }, { unique: true }),
+    database.collection('sessions').createIndex({ id: 1 }, { unique: true }),
+    database.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    database.collection('tasks').createIndex({ id: 1 }, { unique: true }),
+    database.collection('task_events').createIndex({ taskId: 1, createdAt: -1 }),
+    database.collection('audit_events').createIndex({ createdAt: -1 })
+  ]).catch((err) => console.warn('[mongo] Index setup:', err));
 }
 
 export function getDb(): Db {

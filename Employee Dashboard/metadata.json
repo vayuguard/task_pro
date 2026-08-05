@@ -1,6 +1,0 @@
-{
-  "name": "TaskPro Enterprise",
-  "description": "Modern Corporate UI for high-performance team collaboration, task management, and project analytics.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

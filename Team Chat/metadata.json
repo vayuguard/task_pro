@@ -1,6 +1,0 @@
-{
-  "name": "TaskPro Enterprise",
-  "description": "A premium modern corporate collaboration and task management platform including real-time team chat, Kanban boards, admin and employee dashboards, and performance tracking.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

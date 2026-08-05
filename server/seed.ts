@@ -1,6 +1,8 @@
 import { Db } from 'mongodb';
 import { ADMIN_SEED, DEMO_MFA_CODE } from '../src/auth/auth.ts';
 import { projectsHealth } from '../src/initialData.ts';
+import { nowTimestamp } from '../src/utils/time.ts';
+import { hashPassword, isHashedPassword } from './auth/password.ts';
 
 /** memberEmails = employees allowed in the channel. Admins always have access. */
 const CHANNELS = [
@@ -24,13 +26,17 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
 
     // Keep admin login in sync with ADMIN_SEED without wiping employees
     const admin = ADMIN_SEED;
+    const existingAdmin = await usersCol.findOne({ role: 'admin' });
+    const password = existingAdmin?.password && isHashedPassword(String(existingAdmin.password))
+      ? existingAdmin.password
+      : hashPassword(admin.password);
     await usersCol.updateMany(
       { $or: [{ id: admin.id }, { role: 'admin' }] },
       {
         $set: {
           id: admin.id,
           email: admin.email.toLowerCase(),
-          password: admin.password,
+          password,
           role: admin.role,
           mfaRequired: admin.mfaRequired,
           profile: admin.profile
@@ -81,7 +87,7 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
   await usersCol.insertOne({
     id: admin.id,
     email: admin.email.toLowerCase(),
-    password: admin.password,
+    password: hashPassword(admin.password),
     role: admin.role,
     mfaRequired: admin.mfaRequired,
     profile: admin.profile,
@@ -104,14 +110,7 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
     channel: '#general',
     sender: admin.profile,
     text: 'Welcome to TaskPro. Create employees from Settings → Team to invite your team.',
-    timestamp: new Date().toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    }),
+    timestamp: nowTimestamp(),
     reactions: {},
     createdAt: new Date()
   });

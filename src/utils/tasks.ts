@@ -6,7 +6,7 @@ import { ensureTaskTiming } from './taskTiming';
 const EMAIL_BY_NAME: Record<string, string> = {
   'Marcus Wright': 'marcus@taskpro.com',
   'Ritesh Prajapati': 'ritesh.prajapati@vayuguard.com',
-  'Sarah Chen': 'ritesh.prajapati@vayuguard.com',
+  'Sarah Chen': 'sarah@taskpro.com',
   'Alex River': 'alex@taskpro.com',
   'Jessica Lopez': 'jessica@taskpro.com'
 };

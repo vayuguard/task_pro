@@ -1,5 +1,6 @@
 import { Activity, Task, TaskStatus, User } from '../types';
 import { nowTimestamp, roundHours } from './time';
+import { businessMsBetween } from './businessTime';
 
 export const STATUS_BOARD_LABEL: Record<TaskStatus, string> = {
   'To Do': 'Backlog',
@@ -47,13 +48,32 @@ export function getSectionHours(task: Task, status: TaskStatus, now: Date = new 
   return msToHours(getSectionMs(task, status, now));
 }
 
-/** Working time = time spent in In Progress (In Motion) only. */
+/**
+ * Credited working time = time spent In Progress inside office hours only.
+ * Open segments stop accruing at 18:00 IST and resume at 10:00 IST on the
+ * next work day. Closed segments retain their certified server duration.
+ */
 export function getWorkingHours(task: Task, now: Date = new Date()): number {
-  return getSectionHours(task, 'In Progress', now);
+  return msToHours(getWorkingMs(task, now));
 }
 
 export function getWorkingMs(task: Task, now: Date = new Date()): number {
-  return getSectionMs(task, 'In Progress', now);
+  return (task.statusHistory || [])
+    .filter((segment) => segment.status === 'In Progress')
+    .reduce((sum, segment) => {
+      if (segment.endedAt && segment.businessDurationMs != null) {
+        return sum + Math.max(0, segment.businessDurationMs);
+      }
+      const start = new Date(segment.startedAt);
+      const end = segment.endedAt ? new Date(segment.endedAt) : now;
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return sum;
+      return sum + businessMsBetween(start, end);
+    }, 0);
+}
+
+/** Wall-clock time spent In Progress, including nights and non-working days. */
+export function getWallWorkingHours(task: Task, now: Date = new Date()): number {
+  return getSectionHours(task, 'In Progress', now);
 }
 
 export function isWorkTimerRunning(task: Task): boolean {
@@ -120,11 +140,14 @@ export function createInitialTiming(at: Date = new Date()): Pick<
   };
 }
 
-/** Backfill timing for older tasks that lack statusHistory. */
+/** Backfill timing for older tasks that lack statusHistory. Caps invented In Progress time. */
+const LEGACY_MAX_IN_PROGRESS_MS = 8 * 3_600_000; // 8h cap for legacy backfill
+
 export function ensureTaskTiming(task: Task, at: Date = new Date()): Task {
   if (task.statusHistory && task.statusHistory.length > 0) {
     return {
       ...task,
+      timingTrust: task.timingTrust || 'legacy',
       timeLogged: getWorkingHours(task, at),
       assignedAt: task.assignedAt || task.statusHistory[0]?.startedAt || at.toISOString()
     };
@@ -134,24 +157,25 @@ export function ensureTaskTiming(task: Task, at: Date = new Date()): Task {
     task.assignedAt ||
     (task.id.match(/(\d{12,})$/) ? new Date(Number(task.id.match(/(\d{12,})$/)![1])).toISOString() : at.toISOString());
 
+  const inventedMs =
+    task.status === 'In Progress'
+      ? Math.min(Math.max(0, at.getTime() - new Date(started).getTime()), LEGACY_MAX_IN_PROGRESS_MS)
+      : 0;
+
   return {
     ...task,
+    timingTrust: 'legacy',
     assignedAt: started,
     completedAt: task.status === 'Done' ? task.completedAt || at.toISOString() : task.completedAt,
     statusHistory: [
       {
         status: task.status,
         startedAt: started,
-        durationMs: 0
+        durationMs: inventedMs,
+        endedAt: task.status !== 'In Progress' ? at.toISOString() : undefined
       }
     ],
-    timeLogged: task.status === 'In Progress' ? getWorkingHours(
-      {
-        ...task,
-        statusHistory: [{ status: 'In Progress', startedAt: started, durationMs: 0 }]
-      },
-      at
-    ) : task.timeLogged || 0
+    timeLogged: inventedMs / 3_600_000
   };
 }
 
@@ -181,18 +205,23 @@ export function transitionTaskStatus(
   const openIdx = history.length - 1;
   if (openIdx >= 0 && !history[openIdx].endedAt) {
     const open = history[openIdx];
-    const durationMs = Math.max(0, at.getTime() - new Date(open.startedAt).getTime());
+    const start = new Date(open.startedAt);
+    const durationMs = Math.max(0, at.getTime() - start.getTime());
+    const businessDurationMs =
+      open.status === 'In Progress' ? businessMsBetween(start, at) : 0;
     history[openIdx] = {
       ...open,
       endedAt: at.toISOString(),
-      durationMs
+      durationMs,
+      businessDurationMs
     };
   }
 
   history.push({
     status: nextStatus,
     startedAt: at.toISOString(),
-    durationMs: 0
+    durationMs: 0,
+    businessDurationMs: 0
   });
 
   const fromLabel = STATUS_BOARD_LABEL[ensured.status];
@@ -212,18 +241,12 @@ export function transitionTaskStatus(
     timestamp: nowTimestamp(at)
   };
 
-  const timeLogged = msToHours(
-    history
-      .filter((s) => s.status === 'In Progress')
-      .reduce((sum, s) => sum + segmentDurationMs(s, at), 0)
-  );
+  const nextTask = { ...ensured, status: nextStatus, statusHistory: history };
+  const timeLogged = getWorkingHours(nextTask, at);
 
   const perf =
     nextStatus === 'Done'
-      ? getTaskPerformance(
-          { ...ensured, status: nextStatus, statusHistory: history, timeLogged },
-          at
-        )
+      ? getTaskPerformance({ ...nextTask, timeLogged }, at)
       : null;
 
   const doneExtra =
@@ -238,9 +261,7 @@ export function transitionTaskStatus(
   }
 
   return {
-    ...ensured,
-    status: nextStatus,
-    statusHistory: history,
+    ...nextTask,
     timeLogged,
     completedAt: nextStatus === 'Done' ? at.toISOString() : undefined,
     activity: [log, ...ensured.activity]
@@ -250,7 +271,8 @@ export function transitionTaskStatus(
 export function sectionBreakdown(task: Task, now: Date = new Date()) {
   const statuses: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
   return statuses.map((status) => {
-    const ms = getSectionMs(task, status, now);
+    // In Progress is credited in office hours; other columns stay wall-clock dwell.
+    const ms = status === 'In Progress' ? getWorkingMs(task, now) : getSectionMs(task, status, now);
     return {
       status,
       label: STATUS_BOARD_LABEL[status],

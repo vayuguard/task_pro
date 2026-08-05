@@ -1,6 +1,0 @@
-{
-  "name": "TaskPro Enterprise",
-  "description": "An advanced corporate Kanban and task management workspace featuring automated AI performance analytics, AI project assistant chat, and real-time sprint tracking.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

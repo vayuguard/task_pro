@@ -100,18 +100,18 @@ export function needsMfa(session: AuthSession | null): boolean {
   return session !== null && !session.mfaVerified;
 }
 
-const ADMIN_SCREENS: ActiveScreen[] = ['admin-dashboard', 'performance'];
 const SHARED_SCREENS: ActiveScreen[] = [
   'employee-dashboard',
   'kanban-board',
   'task-details',
+  'performance',
   'team-chat',
   'settings'
 ];
 
 export function canAccessScreen(role: UserRole, screen: ActiveScreen): boolean {
+  if (screen === 'admin-dashboard') return role === 'admin';
   if (SHARED_SCREENS.includes(screen)) return true;
-  if (ADMIN_SCREENS.includes(screen)) return role === 'admin';
   return false;
 }
 

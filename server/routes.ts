@@ -1,8 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from './db.ts';
 import { DEMO_MFA_CODE } from '../src/auth/auth.ts';
-import { normalizeTask, normalizeTasks } from '../src/utils/tasks.ts';
+import { normalizeTask, normalizeTasks, isTaskAssignedToUser } from '../src/utils/tasks.ts';
 import { sendEmployeeCredentials } from './mail.ts';
+import { verifyPassword, hashPassword } from './auth/password.ts';
+import { createSession, destroySession, getSession } from './auth/session.ts';
+import { requireAuth, requireAdmin, sessionToClient, type AuthedRequest } from './middleware/auth.ts';
+import { transitionTaskOnServer, markLegacyTasks, enrichTaskForClient, reassignTask } from './taskService.ts';
+import { computePerformanceScore, computeTeamPerformance } from './scoring.ts';
+import type { ScheduleExceptionDoc } from './scheduleExceptions.ts';
+import type { Task, TaskStatus } from '../src/types.ts';
+import { formatTimeIST } from '../src/utils/time.ts';
 
 function stripMongoId<T extends Record<string, unknown>>(doc: T | null): Omit<T, '_id'> | null {
   if (!doc) return null;
@@ -13,6 +21,50 @@ function stripMongoId<T extends Record<string, unknown>>(doc: T | null): Omit<T,
 
 function avatarFor(name: string) {
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`;
+}
+
+async function appendAudit(
+  actor: { email: string; role: string },
+  action: string,
+  target: string,
+  detail: Record<string, unknown> = {}
+) {
+  await getDb().collection('audit_events').insertOne({
+    actor,
+    action,
+    target,
+    detail,
+    createdAt: new Date()
+  });
+}
+
+async function appendTaskEvent(taskId: string, type: string, actor: string, payload: Record<string, unknown>) {
+  await getDb().collection('task_events').insertOne({
+    taskId,
+    type,
+    actor,
+    payload,
+    createdAt: new Date()
+  });
+}
+
+function employeeAllowedFields(body: Partial<Task>): Partial<Task> {
+  const allowed = ['title', 'description', 'labels', 'subtasks', 'attachments', 'activity', 'priority', 'dueDate'];
+  const out: Record<string, unknown> = {};
+  for (const k of allowed) {
+    if (k in body) out[k] = (body as Record<string, unknown>)[k];
+  }
+  return out as Partial<Task>;
+}
+
+async function loadScheduleExceptions(): Promise<ScheduleExceptionDoc[]> {
+  const docs = await getDb().collection('schedule_exceptions').find({}).toArray();
+  return docs.map((d) => ({
+    email: String(d.email),
+    startHour: Number(d.startHour),
+    endHour: Number(d.endHour),
+    workDays: Array.isArray(d.workDays) ? (d.workDays as number[]) : undefined
+  }));
 }
 
 export function createApiRouter(): Router {
@@ -37,25 +89,27 @@ export function createApiRouter(): Router {
       }
 
       const account = await getDb().collection('users').findOne({
-        email: email.trim().toLowerCase(),
-        password
+        email: email.trim().toLowerCase()
       });
 
-      if (!account) {
+      if (!account || !verifyPassword(password, String(account.password))) {
         res.status(401).json({ ok: false, error: 'Invalid email or password.' });
         return;
       }
 
-      const session = {
+      const serverSession = await createSession(res, {
         userId: account.id as string,
         email: account.email as string,
-        role: account.role as string,
-        profile: account.profile,
-        mfaVerified: !(account.mfaRequired as boolean),
-        loginAt: new Date().toISOString()
-      };
+        role: account.role as 'admin' | 'employee',
+        profile: account.profile as { name: string; email?: string; avatar: string; role?: string },
+        mfaVerified: !(account.mfaRequired as boolean)
+      });
 
-      res.json({ ok: true, session, mfaRequired: account.mfaRequired });
+      res.json({
+        ok: true,
+        session: sessionToClient(serverSession),
+        mfaRequired: account.mfaRequired
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
@@ -81,35 +135,56 @@ export function createApiRouter(): Router {
         return;
       }
 
-      const session = {
+      const session = await createSession(res, {
         userId: account.id as string,
         email: account.email as string,
-        role: account.role as string,
-        profile: account.profile,
-        mfaVerified: true,
-        loginAt: new Date().toISOString()
-      };
-      res.json({ ok: true, session });
+        role: account.role as 'admin' | 'employee',
+        profile: account.profile as { name: string; email?: string; avatar: string; role?: string },
+        mfaVerified: true
+      });
+      res.json({ ok: true, session: sessionToClient(session) });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
 
-  router.get('/bootstrap', async (_req, res) => {
+  router.post('/auth/logout', async (req, res) => {
+    await destroySession(req, res);
+    res.json({ ok: true });
+  });
+
+  router.get('/auth/me', requireAuth, async (req: AuthedRequest, res) => {
+    res.json({ ok: true, session: sessionToClient(req.session!) });
+  });
+
+  router.get('/bootstrap', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const db = getDb();
-      const [tasks, employees, progressLogs, projectsHealth, teamMembers, channels] = await Promise.all([
-        db.collection('tasks').find({}).toArray(),
-        db.collection('employees').find({}).toArray(),
-        db.collection('progress_logs').find({}).toArray(),
-        db.collection('projects_health').find({}).toArray(),
-        db.collection('team_members').find({}).toArray(),
-        db.collection('chat_channels').find({}).toArray()
-      ]);
+      const session = req.session!;
+      const isAdmin = session.role === 'admin';
+
+      const [allTasks, employees, progressLogs, projectsHealth, teamMembers, channels] =
+        await Promise.all([
+          db.collection('tasks').find({}).toArray(),
+          db.collection('employees').find({}).toArray(),
+          db.collection('progress_logs').find({}).toArray(),
+          db.collection('projects_health').find({}).toArray(),
+          db.collection('team_members').find({}).toArray(),
+          db.collection('chat_channels').find({}).toArray()
+        ]);
+
+      const normalized = markLegacyTasks(
+        normalizeTasks(allTasks.map((t) => stripMongoId(t) as never))
+      );
+      const tasks = isAdmin
+        ? normalized
+        : normalized.filter((t) =>
+            isTaskAssignedToUser(t, { ...session.profile, email: session.email })
+          );
 
       res.json({
         ok: true,
-        tasks: normalizeTasks(tasks.map((t) => stripMongoId(t) as never)),
+        tasks,
         employees: employees.map((e) => stripMongoId(e)),
         progressLogs: progressLogs.map((l) => stripMongoId(l)),
         projectsHealth: projectsHealth.map((p) => stripMongoId(p)),
@@ -121,7 +196,7 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get('/employees', async (_req, res) => {
+  router.get('/employees', requireAuth, requireAdmin, async (_req, res) => {
     try {
       const users = await getDb()
         .collection('users')
@@ -137,7 +212,7 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.post('/employees', async (req: Request, res: Response) => {
+  router.post('/employees', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
       const { name, email, password, jobTitle, createdBy } = req.body as {
         name?: string;
@@ -178,7 +253,7 @@ export function createApiRouter(): Router {
       const userDoc = {
         id: employeeId,
         email: emailNorm,
-        password: password.trim(),
+        password: hashPassword(password.trim()),
         role: 'employee' as const,
         mfaRequired: false,
         profile,
@@ -246,14 +321,9 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.delete('/employees/:id', async (req: Request, res: Response) => {
+  router.delete('/employees/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
       const employeeId = decodeURIComponent(req.params.id);
-      const role = String(req.query.role || req.body?.role || '').trim();
-      if (role && role !== 'admin') {
-        res.status(403).json({ ok: false, error: 'Only admin can delete employees.' });
-        return;
-      }
 
       const db = getDb();
       const user = await db.collection('users').findOne({ id: employeeId });
@@ -277,7 +347,7 @@ export function createApiRouter(): Router {
         emailNorm
           ? db.collection('chat_channels').updateMany(
               { memberEmails: emailNorm },
-              { $pull: { memberEmails: emailNorm } }
+              { $pull: { memberEmails: emailNorm } } as Record<string, unknown>
             )
           : Promise.resolve()
       ]);
@@ -288,40 +358,180 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get('/tasks', async (_req, res) => {
+  router.get('/tasks', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const docs = await getDb().collection('tasks').find({}).toArray();
-      res.json({ ok: true, tasks: normalizeTasks(docs.map((t) => stripMongoId(t) as never)) });
+      let tasks = markLegacyTasks(normalizeTasks(docs.map((t) => stripMongoId(t) as never)));
+      if (req.session!.role !== 'admin') {
+        tasks = tasks.filter((t) =>
+          isTaskAssignedToUser(t, { ...req.session!.profile, email: req.session!.email })
+        );
+      }
+      res.json({ ok: true, tasks });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
 
-  router.post('/tasks', async (req, res) => {
+  router.post('/tasks', requireAuth, async (req: AuthedRequest, res) => {
     try {
-      const task = normalizeTask(req.body);
+      const task = normalizeTask({ ...req.body, timingTrust: 'certified', version: 0 });
       await getDb().collection('tasks').insertOne({ ...task, updatedAt: new Date() });
+      await appendTaskEvent(task.id, 'created', req.session!.email, { status: task.status });
       res.json({ ok: true, task });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
 
-  router.put('/tasks/:id', async (req, res) => {
+  router.post('/tasks/:id/transition', requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
-      const task = normalizeTask({ ...req.body, id: req.params.id });
-      await getDb().collection('tasks').updateOne(
-        { id: req.params.id },
-        { $set: { ...task, updatedAt: new Date() } },
-        { upsert: true }
+      const taskId = req.params.id;
+      const { status, expectedVersion } = req.body as { status?: TaskStatus; expectedVersion?: number };
+      if (!status) {
+        res.status(400).json({ ok: false, error: 'status required' });
+        return;
+      }
+
+      const col = getDb().collection('tasks');
+      const existing = await col.findOne({ id: taskId });
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Task not found' });
+        return;
+      }
+
+      const prev = normalizeTask(stripMongoId(existing) as Task);
+      const session = req.session!;
+
+      if (
+        session.role !== 'admin' &&
+        !isTaskAssignedToUser(prev, { ...session.profile, email: session.email })
+      ) {
+        res.status(403).json({ ok: false, error: 'Not your task.' });
+        return;
+      }
+
+      if (expectedVersion != null && (prev.version || 0) !== expectedVersion) {
+        res.status(409).json({ ok: false, error: 'Task was updated elsewhere. Refresh and retry.' });
+        return;
+      }
+
+      const actor = { ...session.profile, email: session.email };
+      const exceptions = await loadScheduleExceptions();
+      const task = enrichTaskForClient(
+        transitionTaskOnServer(prev, status, actor, new Date(), exceptions),
+        new Date(),
+        exceptions
       );
+      await col.updateOne({ id: taskId }, { $set: { ...task, updatedAt: new Date() } });
+      await appendTaskEvent(taskId, 'transition', session.email, {
+        from: prev.status,
+        to: status,
+        version: task.version
+      });
       res.json({ ok: true, task });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
 
-  router.delete('/tasks/:id', async (req, res) => {
+  router.put('/tasks/:id', requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const taskId = req.params.id;
+      const col = getDb().collection('tasks');
+      const existing = await col.findOne({ id: taskId });
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Task not found' });
+        return;
+      }
+
+      const prev = normalizeTask(stripMongoId(existing) as Task);
+      const session = req.session!;
+      const isAdmin = session.role === 'admin';
+
+      if (
+        !isAdmin &&
+        !isTaskAssignedToUser(prev, { ...session.profile, email: session.email })
+      ) {
+        res.status(403).json({ ok: false, error: 'Not your task.' });
+        return;
+      }
+
+      let patch: Partial<Task> = req.body;
+      const estimateReason =
+        typeof (req.body as { estimateReason?: string }).estimateReason === 'string'
+          ? (req.body as { estimateReason?: string }).estimateReason!.trim()
+          : '';
+      delete (patch as Record<string, unknown>).estimateReason;
+
+      if (!isAdmin) {
+        patch = employeeAllowedFields(patch);
+        // Employees cannot change status via PUT — use transition endpoint
+        delete (patch as Record<string, unknown>).status;
+        delete (patch as Record<string, unknown>).statusHistory;
+        delete (patch as Record<string, unknown>).timeLogged;
+        delete (patch as Record<string, unknown>).completedAt;
+        delete (patch as Record<string, unknown>).assignee;
+        delete (patch as Record<string, unknown>).timeEstimated;
+        delete (patch as Record<string, unknown>).timingTrust;
+      } else {
+        if (
+          patch.timeEstimated != null &&
+          patch.timeEstimated !== prev.timeEstimated &&
+          !estimateReason
+        ) {
+          res.status(400).json({ ok: false, error: 'Reason required to change estimate.' });
+          return;
+        }
+        // Admin: strip client-forged timing fields; use transition for status
+        if (patch.status && patch.status !== prev.status) {
+          const actor = { ...session.profile, email: session.email };
+          const exceptions = await loadScheduleExceptions();
+          const transitioned = transitionTaskOnServer(
+            { ...prev, ...patch, status: prev.status },
+            patch.status,
+            actor,
+            new Date(),
+            exceptions
+          );
+          patch = { ...patch, ...transitioned };
+        }
+        delete (patch as Record<string, unknown>).statusHistory;
+        delete (patch as Record<string, unknown>).timeLogged;
+      }
+
+      let merged = normalizeTask({ ...prev, ...patch, id: taskId });
+      const exceptions = await loadScheduleExceptions();
+      if (isAdmin && patch.assignee && patch.assignee.email !== prev.assignee.email) {
+        merged = reassignTask(merged, patch.assignee, new Date(), exceptions);
+      }
+      merged = enrichTaskForClient(merged, new Date(), exceptions);
+      await col.updateOne({ id: taskId }, { $set: { ...merged, updatedAt: new Date() } });
+      if (
+        isAdmin &&
+        patch.timeEstimated != null &&
+        patch.timeEstimated !== prev.timeEstimated
+      ) {
+        await appendAudit(
+          { email: session.email, role: session.role },
+          'task.estimate.change',
+          taskId,
+          { from: prev.timeEstimated, to: patch.timeEstimated, reason: estimateReason }
+        );
+      }
+      await appendAudit(
+        { email: session.email, role: session.role },
+        'task.update',
+        taskId,
+        { fields: Object.keys(patch) }
+      );
+      res.json({ ok: true, task: merged });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.delete('/tasks/:id', requireAuth, requireAdmin, async (req, res) => {
     try {
       await getDb().collection('tasks').deleteOne({ id: req.params.id });
       res.json({ ok: true });
@@ -330,7 +540,58 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get('/progress-logs', async (_req, res) => {
+  router.get('/performance', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const session = req.session!;
+      const period = String(req.query.period || '30d');
+      const userId = String(req.query.userId || '').toLowerCase();
+
+      const end = new Date();
+      const start = new Date();
+      if (period === '7d') start.setDate(start.getDate() - 7);
+      else if (period === '90d') start.setDate(start.getDate() - 90);
+      else start.setDate(start.getDate() - 30);
+
+      const docs = await getDb().collection('tasks').find({}).toArray();
+      const tasks = markLegacyTasks(normalizeTasks(docs.map((t) => stripMongoId(t) as never)));
+      const members = await getDb().collection('team_members').find({}).toArray();
+      const users = members.map((m) => stripMongoId(m) as { name: string; email?: string; avatar: string; role?: string });
+
+      if (session.role === 'admin' && !userId) {
+        const scores = computeTeamPerformance(
+          tasks,
+          users.map((u) => ({ name: u.name, avatar: u.avatar, email: u.email, role: u.role })),
+          start,
+          end
+        );
+        res.json({ ok: true, period, scores });
+        return;
+      }
+
+      const targetEmail = userId || session.email.toLowerCase();
+      const target = users.find((u) => (u.email || u.name).toLowerCase() === targetEmail) || session.profile;
+
+      if (
+        session.role !== 'admin' &&
+        targetEmail !== session.email.toLowerCase()
+      ) {
+        res.status(403).json({ ok: false, error: 'Cannot view other employee scores.' });
+        return;
+      }
+
+      const score = computePerformanceScore(
+        tasks,
+        { name: target.name, avatar: target.avatar, email: target.email || session.email, role: target.role },
+        start,
+        end
+      );
+      res.json({ ok: true, period, score });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/progress-logs', requireAuth, async (_req, res) => {
     try {
       const logs = await getDb().collection('progress_logs').find({}).toArray();
       res.json({ ok: true, logs: logs.map((l) => stripMongoId(l)) });
@@ -339,7 +600,7 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.post('/progress-logs', async (req, res) => {
+  router.post('/progress-logs', requireAuth, async (req, res) => {
     try {
       const log = { ...req.body, createdAt: new Date() };
       await getDb().collection('progress_logs').insertOne(log);
@@ -375,14 +636,10 @@ export function createApiRouter(): Router {
     return members.includes(email.trim().toLowerCase());
   }
 
-  router.get('/chat-channels', async (req, res) => {
+  router.get('/chat-channels', requireAuth, async (req: AuthedRequest, res) => {
     try {
-      const email = String(req.query.email || '').trim().toLowerCase();
-      const role = String(req.query.role || '').trim();
-      if (!email || !role) {
-        res.status(400).json({ ok: false, error: 'email and role query params required.' });
-        return;
-      }
+      const email = req.session!.email.trim().toLowerCase();
+      const role = req.session!.role;
 
       const all = await getDb().collection('chat_channels').find({}).toArray();
       const visible = isAdminRole(role)
@@ -406,19 +663,14 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.post('/chat-channels', async (req, res) => {
+  router.post('/chat-channels', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
-      let { name, description, memberEmails, role, email } = req.body as {
+      let { name, description, memberEmails } = req.body as {
         name?: string;
         description?: string;
         memberEmails?: string[];
-        role?: string;
-        email?: string;
       };
-      if (!isAdminRole(role)) {
-        res.status(403).json({ ok: false, error: 'Only admin can create channels.' });
-        return;
-      }
+      const email = req.session!.email;
       if (!name?.trim()) {
         res.status(400).json({ ok: false, error: 'Channel name is required.' });
         return;
@@ -446,14 +698,10 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.put('/chat-channels/:channel/members', async (req, res) => {
+  router.put('/chat-channels/:channel/members', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
       const channelName = decodeURIComponent(req.params.channel);
-      const { memberEmails, role } = req.body as { memberEmails?: string[]; role?: string };
-      if (!isAdminRole(role)) {
-        res.status(403).json({ ok: false, error: 'Only admin can manage channel members.' });
-        return;
-      }
+      const { memberEmails } = req.body as { memberEmails?: string[] };
       const existing = await getChannelDoc(channelName);
       if (!existing) {
         res.status(404).json({ ok: false, error: 'Channel not found.' });
@@ -476,15 +724,10 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.delete('/chat-channels/:channel/members/:email', async (req, res) => {
+  router.delete('/chat-channels/:channel/members/:email', requireAuth, requireAdmin, async (req, res) => {
     try {
       const channelName = decodeURIComponent(req.params.channel);
       const memberEmail = decodeURIComponent(req.params.email).trim().toLowerCase();
-      const role = String(req.query.role || req.body?.role || '').trim();
-      if (!isAdminRole(role)) {
-        res.status(403).json({ ok: false, error: 'Only admin can remove members.' });
-        return;
-      }
       const existing = await getChannelDoc(channelName);
       if (!existing) {
         res.status(404).json({ ok: false, error: 'Channel not found.' });
@@ -507,14 +750,9 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.delete('/chat-channels/:channel', async (req, res) => {
+  router.delete('/chat-channels/:channel', requireAuth, requireAdmin, async (req, res) => {
     try {
       const channelName = decodeURIComponent(req.params.channel);
-      const role = String(req.query.role || '').trim();
-      if (!isAdminRole(role)) {
-        res.status(403).json({ ok: false, error: 'Only admin can delete channels.' });
-        return;
-      }
       const existing = await getChannelDoc(channelName);
       if (!existing) {
         res.status(404).json({ ok: false, error: 'Channel not found.' });
@@ -531,11 +769,11 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get('/chat/:channel', async (req, res) => {
+  router.get('/chat/:channel', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const channel = decodeURIComponent(req.params.channel);
-      const email = String(req.query.email || '').trim().toLowerCase();
-      const role = String(req.query.role || '').trim();
+      const email = req.session!.email;
+      const role = req.session!.role;
       const doc = await getChannelDoc(channel);
       if (!canAccessChannel(doc as { memberEmails?: string[] } | null, email, role)) {
         res.status(403).json({ ok: false, error: 'You are not a member of this channel.' });
@@ -552,13 +790,13 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.post('/chat/:channel', async (req, res) => {
+  router.post('/chat/:channel', requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
       const channel = decodeURIComponent(req.params.channel);
       const text = String(req.body.text || '').trim();
-      const role = String(req.body.role || '').trim();
+      const role = req.session!.role;
       const sender = req.body.sender as { email?: string; name?: string } | undefined;
-      const email = String(sender?.email || req.body.email || '').trim().toLowerCase();
+      const email = req.session!.email;
 
       if (!text) {
         res.status(400).json({ ok: false, error: 'Message text is required.' });
@@ -575,7 +813,7 @@ export function createApiRouter(): Router {
         channel,
         sender: req.body.sender,
         text,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: formatTimeIST(),
         reactions: {} as Record<string, string[]>,
         createdAt: new Date()
       };
@@ -586,16 +824,16 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.post('/chat/:channel/:messageId/react', async (req, res) => {
+  router.post('/chat/:channel/:messageId/react', requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
       const channel = decodeURIComponent(req.params.channel);
       const messageId = req.params.messageId;
-      const { emoji, userKey, email, role } = req.body as {
+      const { emoji, userKey } = req.body as {
         emoji?: string;
         userKey?: string;
-        email?: string;
-        role?: string;
       };
+      const email = req.session!.email;
+      const role = req.session!.role;
       if (!emoji || !userKey) {
         res.status(400).json({ ok: false, error: 'emoji and userKey required.' });
         return;
@@ -625,6 +863,54 @@ export function createApiRouter(): Router {
       await col.updateOne({ id: messageId, channel }, { $set: { reactions } });
       const updated = await col.findOne({ id: messageId, channel });
       res.json({ ok: true, message: stripMongoId(updated as Record<string, unknown>) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/schedule-exceptions', requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const docs = await getDb().collection('schedule_exceptions').find({}).toArray();
+      res.json({
+        ok: true,
+        exceptions: docs.map((d) => {
+          const { _id, ...rest } = d as Record<string, unknown> & { _id: unknown };
+          void _id;
+          return rest;
+        })
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.post('/schedule-exceptions', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
+    try {
+      const { email, startHour, endHour } = req.body as { email?: string; startHour?: number; endHour?: number };
+      if (!email?.trim() || startHour == null || endHour == null) {
+        res.status(400).json({ ok: false, error: 'email, startHour, endHour required' });
+        return;
+      }
+      const doc = {
+        id: `sched-${Date.now()}`,
+        email: email.trim().toLowerCase(),
+        startHour: Number(startHour),
+        endHour: Number(endHour),
+        workDays: [1, 2, 3, 4, 5, 6],
+        timezone: 'Asia/Kolkata',
+        createdAt: new Date()
+      };
+      await getDb().collection('schedule_exceptions').insertOne(doc);
+      res.json({ ok: true, exception: doc });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.delete('/schedule-exceptions/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await getDb().collection('schedule_exceptions').deleteOne({ id: req.params.id });
+      res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }

@@ -1,10 +1,11 @@
-import { Task, EmployeeMetrics, ProgressLog, ProjectHealth, User } from '../types';
+import { Task, EmployeeMetrics, ProgressLog, ProjectHealth, User, TaskStatus } from '../types';
 import { AuthSession } from '../auth/auth';
 
 const API = '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     ...init
   });
@@ -22,6 +23,25 @@ export interface BootstrapData {
   projectsHealth: ProjectHealth[];
   teamMembers: User[];
   channels: { name: string; description: string; unread: boolean }[];
+}
+
+export interface PerformanceScoreDto {
+  formulaVersion: string;
+  periodStart: string;
+  periodEnd: string;
+  userId: string;
+  userName: string;
+  overall: number | null;
+  confidence: 'low' | 'medium' | 'high';
+  eligibleTasks: number;
+  components: Array<{
+    id: string;
+    label: string;
+    weight: number;
+    score: number | null;
+    detail: string;
+  }>;
+  disclaimer: string;
 }
 
 export async function apiHealth(): Promise<{ ok: boolean; database: string }> {
@@ -48,6 +68,14 @@ export async function apiVerifyMfa(
   });
 }
 
+export async function apiLogout(): Promise<{ ok: true }> {
+  return request('/auth/logout', { method: 'POST' });
+}
+
+export async function apiMe(): Promise<{ ok: true; session: AuthSession }> {
+  return request('/auth/me');
+}
+
 export async function apiBootstrap(): Promise<BootstrapData & { ok: true }> {
   return request('/bootstrap');
 }
@@ -56,26 +84,43 @@ export async function apiCreateTask(task: Task): Promise<{ ok: true; task: Task 
   return request('/tasks', { method: 'POST', body: JSON.stringify(task) });
 }
 
-export async function apiUpdateTask(task: Task): Promise<{ ok: true; task: Task }> {
+export async function apiUpdateTask(
+  task: Task,
+  meta?: { estimateReason?: string }
+): Promise<{ ok: true; task: Task }> {
   return request(`/tasks/${encodeURIComponent(task.id)}`, {
     method: 'PUT',
-    body: JSON.stringify(task)
+    body: JSON.stringify({ ...task, ...meta })
   });
 }
 
-export async function apiCreateProgressLog(
-  log: ProgressLog
-): Promise<{ ok: true; log: ProgressLog }> {
-  return request('/progress-logs', { method: 'POST', body: JSON.stringify(log) });
+export async function apiTransitionTask(
+  taskId: string,
+  status: TaskStatus,
+  expectedVersion?: number
+): Promise<{ ok: true; task: Task }> {
+  return request(`/tasks/${encodeURIComponent(taskId)}/transition`, {
+    method: 'POST',
+    body: JSON.stringify({ status, expectedVersion })
+  });
+}
+
+export async function apiGetPerformance(
+  period = '30d',
+  userId?: string
+): Promise<
+  | { ok: true; period: string; score: PerformanceScoreDto }
+  | { ok: true; period: string; scores: PerformanceScoreDto[] }
+> {
+  const q = new URLSearchParams({ period });
+  if (userId) q.set('userId', userId);
+  return request(`/performance?${q}`);
 }
 
 export async function apiGetChatMessages(
-  channel: string,
-  email: string,
-  role: string
+  channel: string
 ): Promise<{ ok: true; messages: ChatMessageDto[] }> {
-  const q = new URLSearchParams({ email, role });
-  return request(`/chat/${encodeURIComponent(channel)}?${q}`);
+  return request(`/chat/${encodeURIComponent(channel)}`);
 }
 
 export interface ChatMessageDto {
@@ -98,29 +143,22 @@ export interface ChatChannelDto {
 export async function apiSendChatMessage(
   channel: string,
   sender: User,
-  text: string,
-  role: string
+  text: string
 ): Promise<{ ok: true; message: ChatMessageDto }> {
   return request(`/chat/${encodeURIComponent(channel)}`, {
     method: 'POST',
-    body: JSON.stringify({ sender, text, role, email: sender.email })
+    body: JSON.stringify({ sender, text })
   });
 }
 
-export async function apiListChannels(
-  email: string,
-  role: string
-): Promise<{ ok: true; channels: ChatChannelDto[] }> {
-  const q = new URLSearchParams({ email, role });
-  return request(`/chat-channels?${q}`);
+export async function apiListChannels(): Promise<{ ok: true; channels: ChatChannelDto[] }> {
+  return request('/chat-channels');
 }
 
 export async function apiCreateChannel(payload: {
   name: string;
   description?: string;
   memberEmails?: string[];
-  email: string;
-  role: string;
 }): Promise<{ ok: true; channel: ChatChannelDto }> {
   return request('/chat-channels', {
     method: 'POST',
@@ -130,33 +168,26 @@ export async function apiCreateChannel(payload: {
 
 export async function apiUpdateChannelMembers(
   channel: string,
-  memberEmails: string[],
-  role: string
+  memberEmails: string[]
 ): Promise<{ ok: true; channel: ChatChannelDto }> {
   return request(`/chat-channels/${encodeURIComponent(channel)}/members`, {
     method: 'PUT',
-    body: JSON.stringify({ memberEmails, role })
+    body: JSON.stringify({ memberEmails })
   });
 }
 
 export async function apiRemoveChannelMember(
   channel: string,
-  memberEmail: string,
-  role: string
+  memberEmail: string
 ): Promise<{ ok: true; channel: ChatChannelDto }> {
-  const q = new URLSearchParams({ role });
   return request(
-    `/chat-channels/${encodeURIComponent(channel)}/members/${encodeURIComponent(memberEmail)}?${q}`,
+    `/chat-channels/${encodeURIComponent(channel)}/members/${encodeURIComponent(memberEmail)}`,
     { method: 'DELETE' }
   );
 }
 
-export async function apiDeleteChannel(
-  channel: string,
-  role: string
-): Promise<{ ok: true; deleted: string }> {
-  const q = new URLSearchParams({ role });
-  return request(`/chat-channels/${encodeURIComponent(channel)}?${q}`, {
+export async function apiDeleteChannel(channel: string): Promise<{ ok: true; deleted: string }> {
+  return request(`/chat-channels/${encodeURIComponent(channel)}`, {
     method: 'DELETE'
   });
 }
@@ -165,13 +196,11 @@ export async function apiReactToMessage(
   channel: string,
   messageId: string,
   emoji: string,
-  userKey: string,
-  email: string,
-  role: string
+  userKey: string
 ): Promise<{ ok: true; message: ChatMessageDto }> {
   return request(`/chat/${encodeURIComponent(channel)}/${encodeURIComponent(messageId)}/react`, {
     method: 'POST',
-    body: JSON.stringify({ emoji, userKey, email, role })
+    body: JSON.stringify({ emoji, userKey })
   });
 }
 
@@ -200,11 +229,34 @@ export async function apiCreateEmployee(payload: {
 }
 
 export async function apiDeleteEmployee(
-  employeeId: string,
-  role: string
+  employeeId: string
 ): Promise<{ ok: true; deleted: string; email: string | null }> {
-  const q = new URLSearchParams({ role });
-  return request(`/employees/${encodeURIComponent(employeeId)}?${q}`, {
+  return request(`/employees/${encodeURIComponent(employeeId)}`, {
     method: 'DELETE'
   });
+}
+
+export interface ScheduleExceptionDto {
+  id: string;
+  email: string;
+  startHour: number;
+  endHour: number;
+  workDays?: number[];
+  timezone?: string;
+}
+
+export async function apiListScheduleExceptions(): Promise<{ ok: true; exceptions: ScheduleExceptionDto[] }> {
+  return request('/schedule-exceptions');
+}
+
+export async function apiCreateScheduleException(payload: {
+  email: string;
+  startHour: number;
+  endHour: number;
+}): Promise<{ ok: true; exception: ScheduleExceptionDto }> {
+  return request('/schedule-exceptions', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function apiDeleteScheduleException(id: string): Promise<{ ok: true }> {
+  return request(`/schedule-exceptions/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

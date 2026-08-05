@@ -1,6 +1,0 @@
-{
-  "name": "TaskPro Enterprise",
-  "description": "A high-performance modern corporate task management and administrative dashboard built with premium typography and responsive design.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
