@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Task, User, TaskPriority, UserRole } from '../types';
 import { enrichUserWithEmail } from '../utils/tasks';
 import { nowTimestamp, defaultDueDateInput, dueDateFromInput } from '../utils/time';
+import { createInitialTiming } from '../utils/taskTiming';
 import { TASK_PRIORITIES } from '../utils/priority';
 import { AnimatedModal } from './ui/motion';
 
@@ -49,6 +50,7 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
     const reporter = self;
     const hours = Math.round(estimateHours * 10) / 10;
 
+    const timing = createInitialTiming();
     const newTask: Task = {
       id: `Task-${Date.now()}`,
       title: title.trim(),
@@ -63,6 +65,8 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
       labels: ['General'],
       timeLogged: 0,
       timeEstimated: hours,
+      assignedAt: timing.assignedAt,
+      statusHistory: timing.statusHistory,
       subtasks: [],
       attachments: [],
       activity: [{
@@ -70,8 +74,8 @@ export default function NewTaskModal({ onClose, onAddTask, currentUser, userRole
         type: 'log',
         user: reporter,
         content: isAdmin
-          ? `created (${hours}h planned, due ${dueDateFromInput(dueDateInput)}) and assigned to ${taskAssignee.name}`
-          : `created this task with ${hours}h planned, due ${dueDateFromInput(dueDateInput)}`,
+          ? `created in Backlog (${hours}h planned, due ${dueDateFromInput(dueDateInput)}) · assigned to ${taskAssignee.name} · timer starts in In Motion`
+          : `created in Backlog with ${hours}h planned, due ${dueDateFromInput(dueDateInput)} · timer starts when moved to In Motion`,
         timestamp: nowTimestamp()
       }]
     };

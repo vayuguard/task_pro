@@ -34,6 +34,14 @@ export interface Activity {
 export type TaskPriority = 'Highest' | 'High' | 'Medium' | 'Low';
 export type TaskStatus = 'To Do' | 'In Progress' | 'Review' | 'Done';
 
+/** Time spent in one Kanban section (open segment has no endedAt). */
+export interface StatusTimeSegment {
+  status: TaskStatus;
+  startedAt: string;
+  endedAt?: string;
+  durationMs: number;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -46,8 +54,15 @@ export interface Task {
   createdDate: string;
   dueDate: string;
   labels: string[];
+  /** Auto: hours spent in In Progress (In Motion). */
   timeLogged: number;
   timeEstimated: number;
+  /** ISO — when task was created/assigned (timer not started yet). */
+  assignedAt?: string;
+  /** ISO — when moved to Done. */
+  completedAt?: string;
+  /** Full record of time in each section. */
+  statusHistory?: StatusTimeSegment[];
   subtasks: Subtask[];
   attachments: Attachment[];
   activity: Activity[];

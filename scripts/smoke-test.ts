@@ -6,6 +6,7 @@ import { AUTH_ACCOUNTS, ADMIN_SEED, canAccessScreen, canAssignToOthers, canViewA
 import { getVisibleTasks, isTaskAssignedToUser, normalizeTasks, enrichUserWithEmail, normalizePriority } from '../src/utils/tasks.ts';
 import { TASK_PRIORITIES } from '../src/utils/priority.ts';
 import { nowTimestamp, resolveActivityTimestamp } from '../src/utils/time.ts';
+import { createInitialTiming, transitionTaskStatus, getWorkingHours, getTaskPerformance } from '../src/utils/taskTiming.ts';
 import { Task } from '../src/types.ts';
 
 let passed = 0;
@@ -100,6 +101,44 @@ assert(janeVisible.length === 1 && janeVisible[0].id === 'T1', 'employee only se
 assert(isTaskAssignedToUser(sampleTasks[0], empUser), 'email match assigns task to employee');
 assert(getVisibleTasks(sampleTasks, ADMIN_SEED.profile, 'admin').length === 2, 'admin sees all tasks');
 assert(sampleTasks[0].priority === 'Highest', 'Highest priority preserved');
+
+// Automated status timing
+const timingUser = ADMIN_SEED.profile;
+const t0: Task = {
+  id: `Task-${Date.now()}`,
+  title: 'Timing',
+  project: 'P',
+  priority: 'Medium',
+  status: 'To Do',
+  description: '',
+  assignee: timingUser,
+  reporter: timingUser,
+  createdDate: 'Aug 5, 2026',
+  dueDate: 'Aug 12, 2026',
+  labels: [],
+  timeEstimated: 2,
+  subtasks: [],
+  attachments: [],
+  activity: [],
+  ...createInitialTiming(new Date('2026-08-05T10:00:00.000Z'))
+};
+assert(t0.timeLogged === 0, 'Backlog starts with 0 spent hours');
+assert(getWorkingHours(t0, new Date('2026-08-05T12:00:00.000Z')) === 0, 'Backlog does not accrue work time');
+
+const t1 = transitionTaskStatus(t0, 'In Progress', timingUser, new Date('2026-08-05T11:00:00.000Z'));
+assert(t1.status === 'In Progress', 'moved to In Motion');
+assert(getWorkingHours(t1, new Date('2026-08-05T12:00:00.000Z')) === 1, '1h accrued after 1h in In Motion');
+
+const t2 = transitionTaskStatus(t1, 'Review', timingUser, new Date('2026-08-05T12:30:00.000Z'));
+assert(t2.status === 'Review', 'moved to Check It');
+assert(getWorkingHours(t2, new Date('2026-08-05T15:00:00.000Z')) === 1.5, 'timer stopped in Check It at 1.5h');
+
+const t3 = transitionTaskStatus(t2, 'Done', timingUser, new Date('2026-08-05T16:00:00.000Z'));
+const perf = getTaskPerformance(t3, new Date('2026-08-05T16:00:00.000Z'));
+assert(t3.status === 'Done', 'moved to Done');
+assert(perf.spent === 1.5, 'Done spent stays 1.5h');
+assert(perf.label === 'Early', 'finished early vs 2h plan');
+assert((perf.efficiencyPct || 0) > 100, 'efficiency over 100% when early');
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);

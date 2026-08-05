@@ -6,6 +6,7 @@ import { staggerContainer, staggerItem } from './ui/motion';
 import { enrichUserWithEmail, isTaskAssignedToUser } from '../utils/tasks';
 import { TASK_PRIORITIES, priorityBadgeClass, priorityRank } from '../utils/priority';
 import { hoursPct, roundHours, resolveActivityTimestamp } from '../utils/time';
+import { getWorkingHours, getTaskPerformance, getSectionHours } from '../utils/taskTiming';
 
 interface PerformanceViewProps {
   tasks: Task[];
@@ -122,7 +123,7 @@ export default function PerformanceView({
       else if (task.status === 'In Progress') row.inProgress += 1;
       else if (task.status === 'Review') row.review += 1;
       else if (task.status === 'To Do') row.todo += 1;
-      row.logged += task.timeLogged || 0;
+      row.logged += getWorkingHours(task);
       row.estimated += task.timeEstimated || 0;
 
       const due = parseDue(task.dueDate);
@@ -158,15 +159,6 @@ export default function PerformanceView({
     return tasks.filter((t) => isTaskAssignedToUser(t, user));
   }, [tasks, selectedPerson]);
 
-  const scopedLogs = useMemo(() => {
-    if (!selectedPerson) return progressLogs;
-    const name = selectedPerson.name.toLowerCase();
-    const taskIds = new Set(scopedTasks.map((t) => t.id));
-    return progressLogs.filter(
-      (l) => l.author.toLowerCase() === name || taskIds.has(l.taskId)
-    );
-  }, [progressLogs, selectedPerson, scopedTasks]);
-
   const filteredWork = useMemo(() => {
     return scopedTasks.filter((t) => {
       if (workFilter === 'all') return true;
@@ -182,12 +174,22 @@ export default function PerformanceView({
   const totalTasks = scopedTasks.length;
   const completedTasks = scopedTasks.filter((t) => t.status === 'Done').length;
   const inProgress = scopedTasks.filter((t) => t.status === 'In Progress' || t.status === 'Review').length;
-  const totalHoursLogged = roundHours(scopedTasks.reduce((sum, t) => sum + (t.timeLogged || 0), 0));
+  const totalHoursLogged = roundHours(scopedTasks.reduce((sum, t) => sum + getWorkingHours(t), 0));
   const totalHoursEstimated = roundHours(scopedTasks.reduce((sum, t) => sum + (t.timeEstimated || 0), 0));
   const remainingHours = Math.max(roundHours(totalHoursEstimated - totalHoursLogged), 0);
   const budgetUsedPct = hoursPct(totalHoursLogged, totalHoursEstimated);
   const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const overBudget = scopedTasks.filter((t) => t.timeLogged > t.timeEstimated && t.timeEstimated > 0);
+  const overBudget = scopedTasks.filter((t) => getWorkingHours(t) > t.timeEstimated && t.timeEstimated > 0);
+  const earlyDone = scopedTasks.filter((t) => {
+    if (t.status !== 'Done') return false;
+    return getTaskPerformance(t).label === 'Early';
+  });
+  const avgEfficiency = useMemo(() => {
+    const done = scopedTasks.filter((t) => t.status === 'Done' && t.timeEstimated > 0 && getWorkingHours(t) > 0);
+    if (done.length === 0) return null;
+    const sum = done.reduce((s, t) => s + (getTaskPerformance(t).efficiencyPct || 0), 0);
+    return Math.round(sum / done.length);
+  }, [scopedTasks]);
 
   const overdueOpen = useMemo(
     () =>
@@ -216,7 +218,7 @@ export default function PerformanceView({
       status,
       count: scopedTasks.filter((t) => t.status === status).length,
       hours: roundHours(scopedTasks.filter((t) => t.status === status).reduce((s, t) => s + t.timeEstimated, 0)),
-      logged: roundHours(scopedTasks.filter((t) => t.status === status).reduce((s, t) => s + t.timeLogged, 0))
+      logged: roundHours(scopedTasks.filter((t) => t.status === status).reduce((s, t) => s + getWorkingHours(t), 0))
     }));
   }, [scopedTasks]);
 
@@ -230,7 +232,7 @@ export default function PerformanceView({
         open: open.length,
         done: list.length - open.length,
         planned: roundHours(list.reduce((s, t) => s + t.timeEstimated, 0)),
-        spent: roundHours(list.reduce((s, t) => s + t.timeLogged, 0))
+        spent: roundHours(list.reduce((s, t) => s + getWorkingHours(t), 0))
       };
     });
   }, [scopedTasks]);
@@ -263,7 +265,7 @@ export default function PerformanceView({
     <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-6 sm:gap-8">
       <PageHeader
         title="Team Performance"
-        subtitle="Admin view — stats, work, and time details for every employee."
+        subtitle="Automated time: Backlog waits · In Motion works · Check It / Done stops the timer."
       />
 
       {/* Employee roster selector */}
@@ -405,7 +407,7 @@ export default function PerformanceView({
             value={`${totalHoursLogged}h`}
             icon="timer"
             color="green"
-            sub={`${scopedLogs.length} hour-log entries`}
+            sub="Auto from In Motion timer"
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -449,23 +451,19 @@ export default function PerformanceView({
         </motion.div>
         <motion.div variants={staggerItem}>
           <StatCard
-            label="Highest / High open"
-            value={String(
-              scopedTasks.filter(
-                (t) => t.status !== 'Done' && (t.priority === 'Highest' || t.priority === 'High')
-              ).length
-            )}
-            icon="keyboard_double_arrow_up"
-            sub="Needs attention first"
+            label="Finished early"
+            value={String(earlyDone.length)}
+            icon="emoji_events"
+            color="green"
+            sub="Done under planned hours"
           />
         </motion.div>
         <motion.div variants={staggerItem}>
           <StatCard
-            label="People tracked"
-            value={String(peopleStats.length)}
-            icon="groups"
-            color="green"
-            sub={selectedPerson ? `Focused on ${selectedPerson.name}` : 'Full roster'}
+            label="Avg efficiency"
+            value={avgEfficiency != null ? `${avgEfficiency}%` : '—'}
+            icon="monitoring"
+            sub="Plan ÷ spent on finished work (>100% = early)"
           />
         </motion.div>
       </motion.div>
@@ -733,7 +731,9 @@ export default function PerformanceView({
                         (parseDue(b.dueDate)?.getTime() ?? Infinity)
                   )
                   .map((task) => {
-                    const pct = hoursPct(task.timeLogged, task.timeEstimated);
+                    const spent = getWorkingHours(task);
+                    const pct = hoursPct(spent, task.timeEstimated);
+                    const perf = getTaskPerformance(task);
                     const due = parseDue(task.dueDate);
                     const isOverdue = task.status !== 'Done' && due && due < today;
                     return (
@@ -776,11 +776,14 @@ export default function PerformanceView({
                           {isOverdue ? ' · overdue' : ''}
                         </td>
                         <td className="py-3 font-mono">{task.timeEstimated}h</td>
-                        <td className="py-3 font-mono font-semibold">{task.timeLogged}h</td>
+                        <td className="py-3 font-mono font-semibold">{spent}h</td>
                         <td className="py-3">
                           <span className={pct > 100 ? 'text-rose-600 font-bold' : 'text-slate-700 font-semibold'}>
                             {pct}%
                           </span>
+                          {task.status === 'Done' && (
+                            <span className="block text-[9px] text-slate-400">{perf.label}</span>
+                          )}
                         </td>
                         <td className="py-3 text-slate-500">{task.createdDate || '—'}</td>
                       </tr>
@@ -795,30 +798,54 @@ export default function PerformanceView({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <GlassPanel className="p-5 sm:p-6">
           <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-            <span className="material-symbols-outlined text-neutral-700">history</span>
-            Hour logs
+            <span className="material-symbols-outlined text-neutral-700">emoji_events</span>
+            Delivery vs plan
           </h3>
           <p className="text-[11px] text-slate-500 mb-4">
-            Time entries for {scopeLabel.toLowerCase()} with timestamps and notes.
+            Finished tasks: early / on track / over plan from automated In Motion time.
           </p>
           <div className="space-y-3 max-h-[420px] overflow-y-auto custom-scrollbar">
-            {scopedLogs.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">No hours logged yet.</p>
+            {scopedTasks.filter((t) => t.status === 'Done').length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No finished tasks yet.</p>
             ) : (
-              scopedLogs.map((log) => (
-                <div key={log.id} className="p-3 liquid-glass rounded-xl">
-                  <div className="flex justify-between items-start mb-1 gap-2">
-                    <p className="text-xs font-bold text-slate-800 line-clamp-1">{log.taskTitle}</p>
-                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded shrink-0">
-                      +{log.hours}h
-                    </span>
-                  </div>
-                  {log.notes && <p className="text-[11px] text-slate-500 line-clamp-2">{log.notes}</p>}
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    {log.author} · {log.timestamp}
-                  </p>
-                </div>
-              ))
+              scopedTasks
+                .filter((t) => t.status === 'Done')
+                .map((task) => {
+                  const perf = getTaskPerformance(task);
+                  return (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => onTaskSelect?.(task)}
+                      className="w-full text-left p-3 liquid-glass rounded-xl cursor-pointer"
+                    >
+                      <div className="flex justify-between gap-2 mb-1">
+                        <p className="text-xs font-bold text-slate-800 line-clamp-1">{task.title}</p>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${
+                            perf.label === 'Early'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : perf.label === 'Over plan'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {perf.label}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        {task.assignee.name} · {perf.spent}h spent / {perf.estimated}h planned
+                        {perf.efficiencyPct != null ? ` · ${perf.efficiencyPct}% efficiency` : ''}
+                        {perf.label === 'Early' ? ` · saved ${perf.earlyHours}h` : ''}
+                        {perf.label === 'Over plan' ? ` · +${Math.abs(perf.earlyHours)}h` : ''}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Backlog {getSectionHours(task, 'To Do')}h · Motion {getSectionHours(task, 'In Progress')}h ·
+                        Check {getSectionHours(task, 'Review')}h
+                      </p>
+                    </button>
+                  );
+                })
             )}
           </div>
         </GlassPanel>
@@ -829,7 +856,7 @@ export default function PerformanceView({
             Activity feed
           </h3>
           <p className="text-[11px] text-slate-500 mb-4">
-            Comments and status/time logs from tasks in this scope.
+            Status moves and timer start/stop logs for {scopeLabel.toLowerCase()}.
           </p>
           <div className="space-y-3 max-h-[420px] overflow-y-auto custom-scrollbar">
             {recentActivity.length === 0 ? (

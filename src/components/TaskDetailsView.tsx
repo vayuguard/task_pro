@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Task, User, Subtask, Attachment, Activity, TaskPriority, TaskStatus } from '../types';
 import { nowTimestamp, dueDateToInput, dueDateFromInput, resolveActivityTimestamp } from '../utils/time';
+import {
+  getWorkingHours,
+  isWorkTimerRunning,
+  sectionBreakdown,
+  getTaskPerformance,
+  transitionTaskStatus,
+  STATUS_BOARD_LABEL
+} from '../utils/taskTiming';
 import { TASK_PRIORITIES, priorityBadgeClass, priorityIcon } from '../utils/priority';
 
 interface TaskDetailsViewProps {
@@ -24,11 +32,22 @@ export default function TaskDetailsView({
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
-  const [showLogTimeModal, setShowLogTimeModal] = useState(false);
-  const [logTimeValue, setLogTimeValue] = useState('2');
   const [showAddLabel, setShowAddLabel] = useState(false);
   const [newLabelText, setNewLabelText] = useState('');
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const spentHours = getWorkingHours(task);
+  const timerRunning = isWorkTimerRunning(task);
+  const sections = sectionBreakdown(task);
+  const performance = getTaskPerformance(task);
+  const timeTrackingPercentage =
+    task.timeEstimated > 0 ? Math.min((spentHours / task.timeEstimated) * 100, 100) : 0;
 
   // Toggle subtask status
   const handleToggleSubtask = (subtaskId: string) => {
@@ -136,22 +155,9 @@ export default function TaskDetailsView({
     setIsEditingDesc(false);
   };
 
-  // Change Status
+  // Change Status — starts/stops auto work timer by board section
   const handleChangeStatus = (status: TaskStatus) => {
-    onUpdateTask({
-      ...task,
-      status,
-      activity: [
-        {
-          id: `act-log-${Date.now()}`,
-          type: 'log',
-          user: currentUser,
-          content: `changed status to "${status}"`,
-          timestamp: nowTimestamp()
-        },
-        ...task.activity
-      ]
-    });
+    onUpdateTask(transitionTaskStatus(task, status, currentUser));
     setShowStatusDropdown(false);
   };
 
@@ -191,29 +197,6 @@ export default function TaskDetailsView({
       ]
     });
     setShowAssigneeDropdown(false);
-  };
-
-  // Log Progress Hours
-  const handleLogProgress = () => {
-    const hours = parseFloat(logTimeValue);
-    if (isNaN(hours) || hours <= 0) return;
-
-    onUpdateTask({
-      ...task,
-      timeLogged: task.timeLogged + hours,
-      activity: [
-        {
-          id: `act-log-${Date.now()}`,
-          type: 'log',
-          user: currentUser,
-          content: `logged ${hours}h of work progress`,
-          timestamp: nowTimestamp()
-        },
-        ...task.activity
-      ]
-    });
-
-    setShowLogTimeModal(false);
   };
 
   // Add Label
@@ -276,9 +259,6 @@ export default function TaskDetailsView({
   const completedSubtasks = task.subtasks.filter((sub) => sub.completed).length;
   const totalSubtasks = task.subtasks.length;
   const subtaskPercentage = totalSubtasks > 0 ? (completedSubtasks / totalSubtasks) * 100 : 0;
-  
-  // Estimation percentage
-  const timeTrackingPercentage = Math.min((task.timeLogged / task.timeEstimated) * 100, 100);
 
   return (
     <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-8 flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -337,19 +317,19 @@ export default function TaskDetailsView({
                     onClick={() => setShowStatusDropdown(!showStatusDropdown)}
                     className="bg-blue-50 text-blue-800 border border-blue-200 px-3 py-1 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-blue-100/70 transition-colors cursor-pointer"
                   >
-                    <span>{task.status}</span>
+                    <span>{STATUS_BOARD_LABEL[task.status]}</span>
                     <span className="material-symbols-outlined text-sm">expand_more</span>
                   </button>
 
                   {showStatusDropdown && (
-                    <div className="absolute left-0 mt-1 w-40 liquid-glass rounded-lg shadow-md z-50 py-1 text-xs">
-                      {['To Do', 'In Progress', 'Review', 'Done'].map((status) => (
+                    <div className="absolute left-0 mt-1 w-44 liquid-glass rounded-lg shadow-md z-50 py-1 text-xs">
+                      {(['To Do', 'In Progress', 'Review', 'Done'] as TaskStatus[]).map((status) => (
                         <button
                           key={status}
-                          onClick={() => handleChangeStatus(status as TaskStatus)}
+                          onClick={() => handleChangeStatus(status)}
                           className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors flex items-center justify-between cursor-pointer"
                         >
-                          <span>{status}</span>
+                          <span>{STATUS_BOARD_LABEL[status]}</span>
                           {task.status === status && <span className="material-symbols-outlined text-sm text-green-600">check</span>}
                         </button>
                       ))}
@@ -726,13 +706,26 @@ export default function TaskDetailsView({
         
         {/* Action Button Cluster */}
         <div className="grid grid-cols-1 gap-3">
-          <button
-            onClick={() => setShowLogTimeModal(true)}
-            className="w-full bg-[#0F172A] hover:bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+          <div
+            className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 border-black ${
+              timerRunning
+                ? 'bg-[#00e5ff]/40 text-slate-900'
+                : task.status === 'To Do'
+                  ? 'bg-white text-slate-700'
+                  : 'bg-[#c8ff00]/30 text-slate-900'
+            }`}
           >
-            <span className="material-symbols-outlined">timer</span>
-            Log Progress
-          </button>
+            <span className="material-symbols-outlined">
+              {timerRunning ? 'timer' : task.status === 'Done' ? 'check_circle' : 'schedule'}
+            </span>
+            {timerRunning
+              ? `Work timer on · ${spentHours}h`
+              : task.status === 'To Do'
+                ? 'In Backlog · timer not started'
+                : task.status === 'Review'
+                  ? `In Check It · timer stopped · ${spentHours}h`
+                  : `Done · ${spentHours}h worked`}
+          </div>
           
           <div className="flex gap-3">
             <button
@@ -748,12 +741,11 @@ export default function TaskDetailsView({
             <button
               onClick={() => {
                 handleChangeStatus('Done');
-                alert('Task has been archived successfully.');
               }}
               className="flex-1 border border-white/50 liquid-glass py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-slate-50 transition-all cursor-pointer text-slate-800"
             >
               <span className="material-symbols-outlined text-lg">archive</span>
-              Archive
+              Mark Done
             </button>
           </div>
         </div>
@@ -905,10 +897,10 @@ export default function TaskDetailsView({
           {/* Time Tracking Progress Widget */}
           <div className="p-6 bg-[#f2f4f6]/30">
             <h4 className="text-xs font-bold uppercase tracking-wider text-ink-muted mb-1">
-              Time tracking
+              Auto time tracking
             </h4>
             <p className="text-[10px] text-slate-500 mb-4">
-              Planned = estimate at create · Spent = hours logged while working
+              Planned at create · Spent only while in In Motion · stops in Check It / Done
             </p>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
@@ -931,33 +923,67 @@ export default function TaskDetailsView({
                   <p className="text-[9px] text-slate-400">hours estimate</p>
                 </div>
                 <div className="rounded-xl bg-white/80 border border-black/5 p-2.5">
-                  <p className="text-[10px] text-slate-500 font-semibold">Spent</p>
-                  <p className="text-sm font-black text-slate-900">{task.timeLogged}h</p>
-                  <p className="text-[9px] text-slate-400">hours logged</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">
+                    Spent {timerRunning ? '(live)' : ''}
+                  </p>
+                  <p className="text-sm font-black text-slate-900">{spentHours}h</p>
+                  <p className="text-[9px] text-slate-400">In Motion only</p>
                 </div>
               </div>
 
               <div className="flex justify-between text-[11px] font-bold text-ink-muted">
                 <span>
                   {task.timeEstimated > 0
-                    ? `${Math.min(Math.round((task.timeLogged / task.timeEstimated) * 100), 999)}% of plan`
+                    ? `${Math.min(Math.round((spentHours / task.timeEstimated) * 100), 999)}% of plan`
                     : 'No estimate'}
                 </span>
                 <span>
-                  {task.timeLogged > task.timeEstimated
-                    ? `${(task.timeLogged - task.timeEstimated).toFixed(1)}h over`
-                    : `${Math.max(task.timeEstimated - task.timeLogged, 0)}h left`}
+                  {performance.label}
+                  {performance.efficiencyPct != null ? ` · ${performance.efficiencyPct}%` : ''}
                 </span>
               </div>
 
               <div className="w-full h-2.5 bg-[#f2f4f6] rounded-full overflow-hidden flex">
                 <div
                   className={`h-full transition-all duration-500 ease-out ${
-                    task.timeLogged > task.timeEstimated ? 'bg-rose-500' : 'bg-[#131b2e]'
+                    spentHours > task.timeEstimated ? 'bg-rose-500' : 'bg-[#131b2e]'
                   }`}
                   style={{ width: `${timeTrackingPercentage}%` }}
                 />
               </div>
+
+              <div className="space-y-2 pt-2 border-t border-slate-200/80">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Time in each section
+                </p>
+                {sections.map((row) => (
+                  <div key={row.status} className="flex justify-between text-[11px]">
+                    <span className={`font-semibold ${row.active ? 'text-cyan-700' : 'text-slate-600'}`}>
+                      {row.label}
+                      {row.active ? ' · now' : ''}
+                    </span>
+                    <span className="font-mono font-bold text-slate-800">{row.display}</span>
+                  </div>
+                ))}
+              </div>
+
+              {task.status === 'Done' && (
+                <div
+                  className={`rounded-xl border-2 border-black/10 p-2.5 text-[11px] font-semibold ${
+                    performance.label === 'Early'
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : performance.label === 'Over plan'
+                        ? 'bg-rose-50 text-rose-800'
+                        : 'bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  {performance.label === 'Early'
+                    ? `Finished early by ${performance.earlyHours}h (${performance.efficiencyPct}% efficiency).`
+                    : performance.label === 'Over plan'
+                      ? `Over plan by ${Math.abs(performance.earlyHours)}h (${performance.efficiencyPct}% efficiency).`
+                      : `Completed on plan · ${spentHours}h of ${task.timeEstimated}h.`}
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -968,60 +994,14 @@ export default function TaskDetailsView({
             <div>
               <h5 className="text-sm font-bold text-slate-900 mb-1">How time works</h5>
               <p className="text-xs text-slate-700 leading-relaxed">
-                Set an estimate when creating the task. Use <strong>Log Hours</strong> (sidebar) or log
-                from this page as you work. Performance compares planned vs spent for the whole team.
+                Create in <strong>Backlog</strong> (no timer). Move to <strong>In Motion</strong> to start
+                work time. Move to <strong>Check It</strong> or <strong>Done</strong> to stop. Performance
+                compares planned estimate vs automated spent time.
               </p>
             </div>
           </div>
         </section>
       </aside>
-
-      {/* Log Time Progress Dialog Modal */}
-      {showLogTimeModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 animate-fade-in">
-          <div className="liquid-glass rounded-xl p-4 sm:p-6 w-full max-w-sm mx-4 border border-white/50 shadow-2xl">
-            <h3 className="text-base font-bold text-slate-900 mb-2">Log hours worked</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Enter hours you spent on this task. Spent time is compared to the planned estimate.
-            </p>
-            <div className="mb-3 rounded-xl bg-slate-50 border border-slate-200 p-3 text-[11px] space-y-1">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Planned</span>
-                <span className="font-bold">{task.timeEstimated}h</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Already spent</span>
-                <span className="font-bold">{task.timeLogged}h</span>
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1">Hours spent now</label>
-              <input
-                type="number"
-                step="0.5"
-                min="0.5"
-                value={logTimeValue}
-                onChange={(e) => setLogTimeValue(e.target.value)}
-                className="w-full border border-white/50 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-slate-800"
-              />
-            </div>
-            <div className="flex justify-end gap-2 text-xs">
-              <button
-                onClick={() => setShowLogTimeModal(false)}
-                className="px-4 py-2 border border-white/50 rounded font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleLogProgress}
-                className="px-4 py-2 bg-[#131b2e] text-white rounded font-bold hover:opacity-95 transition-all cursor-pointer"
-              >
-                Log Progress
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Attachment Image Preview Modal */}
       {previewAttachment && (

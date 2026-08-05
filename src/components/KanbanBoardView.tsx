@@ -1,21 +1,29 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Task, TaskStatus } from '../types';
-import { nowTimestamp } from '../utils/time';
+import { Task, TaskStatus, User } from '../types';
 import { priorityBadgeClass } from '../utils/priority';
+import { getWorkingHours, isWorkTimerRunning, transitionTaskStatus } from '../utils/taskTiming';
 import { fadeUp, staggerContainer, staggerItem } from './ui/motion';
 
 interface KanbanBoardViewProps {
   tasks: Task[];
+  currentUser: User;
   onTaskSelect: (task: Task) => void;
   onUpdateTask: (updatedTask: Task) => void;
 }
 
 export default function KanbanBoardView({
   tasks,
+  currentUser,
   onTaskSelect,
   onUpdateTask
 }: KanbanBoardViewProps) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const columns: { id: TaskStatus; title: string; color: string; icon: string }[] = [
     { id: 'To Do', title: 'Backlog', color: 'border-t-black bg-white/30', icon: 'assignment_late' },
     { id: 'In Progress', title: 'In Motion', color: 'border-t-[#00e5ff] bg-cyan-50/30', icon: 'autorenew' },
@@ -36,23 +44,14 @@ export default function KanbanBoardView({
     }
 
     if (nextIndex !== currentIndex) {
-      const nextStatus = order[nextIndex];
-      onUpdateTask({
-        ...task,
-        status: nextStatus,
-        activity: [
-          {
-            id: `act-log-${Date.now()}`,
-            type: 'log',
-            user: task.assignee,
-            content: `moved this task from "${task.status}" to "${nextStatus}"`,
-            timestamp: nowTimestamp()
-          },
-          ...task.activity
-        ]
-      });
+      onUpdateTask(transitionTaskStatus(task, order[nextIndex], currentUser));
     }
   };
+
+  const hint = useMemo(
+    () => 'Backlog: no timer · In Motion: work timer runs · Check It / Done: timer stops',
+    []
+  );
 
   return (
     <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-4 sm:gap-6 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-hidden">
@@ -60,7 +59,7 @@ export default function KanbanBoardView({
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Kanban Board</h2>
         <p className="text-sm text-slate-500 mt-1">
           <span className="md:hidden">Swipe columns · </span>
-          Use arrow controls to move tasks.
+          {hint}
         </p>
       </motion.div>
 
@@ -98,9 +97,8 @@ export default function KanbanBoardView({
                   </div>
                 ) : (
                   colTasks.map((task) => {
-                    const totalSubs = task.subtasks.length;
-                    const completedSubs = task.subtasks.filter((s) => s.completed).length;
-                    const commentCount = task.activity.filter((a) => a.type === 'comment').length;
+                    const spent = getWorkingHours(task);
+                    const running = isWorkTimerRunning(task);
 
                     return (
                       <motion.div
@@ -112,7 +110,6 @@ export default function KanbanBoardView({
                         onClick={() => onTaskSelect(task)}
                         className="liquid-glass rounded-xl p-4 hover:shadow-lg hover:border-neutral-300/50 transition-all cursor-pointer group flex flex-col gap-3 liquid-card-hover"
                       >
-                        {/* Tags / ID Row */}
                         <div className="flex justify-between items-center">
                           <span className="text-[9px] font-bold text-slate-400 font-mono tracking-wider">{task.id}</span>
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${priorityBadgeClass(task.priority)}`}>
@@ -120,12 +117,10 @@ export default function KanbanBoardView({
                           </span>
                         </div>
 
-                        {/* Card Title */}
                         <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug">
                           {task.title}
                         </h4>
 
-                        {/* Labels row */}
                         {task.labels.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {task.labels.slice(0, 2).map((lbl) => (
@@ -136,59 +131,42 @@ export default function KanbanBoardView({
                           </div>
                         )}
 
-                        {/* Info details / indicators */}
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-100 pt-3">
-                          
-                          {/* Left stats */}
-                          <div className="flex items-center gap-2">
-                            {totalSubs > 0 && (
-                              <span className="inline-flex items-center gap-0.5" title="Subtasks">
-                                <span className="material-symbols-outlined text-xs">checklist</span>
-                                <span className="font-semibold text-slate-600">{completedSubs}/{totalSubs}</span>
-                              </span>
-                            )}
-                            {commentCount > 0 && (
-                              <span className="inline-flex items-center gap-0.5" title="Comments">
-                                <span className="material-symbols-outlined text-xs">forum</span>
-                                <span className="font-semibold text-slate-600">{commentCount}</span>
-                              </span>
-                            )}
-                            {task.attachments.length > 0 && (
-                              <span className="inline-flex items-center gap-0.5" title="Attachments">
-                                <span className="material-symbols-outlined text-xs">attach_file</span>
-                                <span className="font-semibold text-slate-600">{task.attachments.length}</span>
-                              </span>
-                            )}
+                        <div className="flex items-center justify-between gap-2 mt-auto pt-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <img
+                              src={task.assignee.avatar}
+                              alt=""
+                              className="w-5 h-5 rounded-full object-cover shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                            <span className="text-[10px] text-slate-500 truncate">{task.assignee.name}</span>
                           </div>
-
-                          {/* Member avatar */}
-                          <img
-                            className="w-5 h-5 rounded-full object-cover border border-[#c6c6cd]"
-                            src={task.assignee.avatar}
-                            alt={task.assignee.name}
-                            title={`Assigned to ${task.assignee.name}`}
-                            referrerPolicy="no-referrer"
-                          />
+                          <span
+                            className={`text-[10px] font-bold font-mono shrink-0 ${
+                              running ? 'text-cyan-700' : 'text-slate-500'
+                            }`}
+                          >
+                            {running ? '⏱ ' : ''}
+                            {spent}h / {task.timeEstimated}h
+                          </span>
                         </div>
 
-                        {/* Tactile Slider/Shift Controls */}
-                        <div className="flex items-center justify-between bg-slate-50 border border-slate-200/80 rounded px-1.5 py-1 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-between gap-2 pt-1 border-t border-slate-100">
                           <button
+                            type="button"
                             onClick={(e) => moveTask(e, task, 'left')}
-                            disabled={col.id === 'To Do'}
-                            className="material-symbols-outlined text-xs hover:text-black hover:bg-slate-200 p-0.5 rounded cursor-pointer disabled:opacity-25"
-                            title="Slide left"
+                            className="text-[10px] font-bold text-slate-500 hover:text-black cursor-pointer px-2 py-1 rounded-lg hover:bg-white/80"
+                            title="Move left"
                           >
-                            arrow_back
+                            ←
                           </button>
-                          <span className="text-[8px] font-bold text-slate-400 uppercase font-mono tracking-wider">Slide Task</span>
                           <button
+                            type="button"
                             onClick={(e) => moveTask(e, task, 'right')}
-                            disabled={col.id === 'Done'}
-                            className="material-symbols-outlined text-xs hover:text-black hover:bg-slate-200 p-0.5 rounded cursor-pointer disabled:opacity-25"
-                            title="Slide right"
+                            className="text-[10px] font-bold text-slate-500 hover:text-black cursor-pointer px-2 py-1 rounded-lg hover:bg-white/80"
+                            title="Move right"
                           >
-                            arrow_forward
+                            →
                           </button>
                         </div>
                       </motion.div>

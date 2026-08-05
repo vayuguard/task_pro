@@ -1,6 +1,7 @@
 import { Task, TaskPriority, User, UserRole } from '../types';
 import { TASK_PRIORITIES } from './priority';
 import { isPlaceholderTimestamp, resolveActivityTimestamp } from './time';
+import { ensureTaskTiming } from './taskTiming';
 
 const EMAIL_BY_NAME: Record<string, string> = {
   'Marcus Wright': 'marcus@taskpro.com',
@@ -39,7 +40,7 @@ export function normalizePriority(priority: string | undefined): TaskPriority {
   return PRIORITY_ALIASES[priority.toLowerCase()] || 'Medium';
 }
 
-/** Ensure assignee has email, priority is valid, and activity stamps are real times */
+/** Ensure assignee has email, priority is valid, timing + activity stamps are consistent */
 export function normalizeTask(task: Task): Task {
   let next = task;
 
@@ -67,7 +68,7 @@ export function normalizeTask(task: Task): Task {
     }
   }
 
-  return next;
+  return ensureTaskTiming(next);
 }
 
 export function normalizeTasks(tasks: Task[]): Task[] {

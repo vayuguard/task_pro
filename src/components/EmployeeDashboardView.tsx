@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Task, User, TaskStatus } from '../types';
-import { nowTimestamp } from '../utils/time';
 import { TASK_PRIORITIES, priorityBadgeClass } from '../utils/priority';
+import { getWorkingHours, transitionTaskStatus } from '../utils/taskTiming';
 import { fadeUp, staggerContainer, staggerItem } from './ui/motion';
 
 interface EmployeeDashboardViewProps {
@@ -20,45 +20,35 @@ export default function EmployeeDashboardView({
 }: EmployeeDashboardViewProps) {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [priorityFilter, setPriorityFilter] = useState<string>('All');
+  const [, setTick] = useState(0);
 
-  // tasks prop is already filtered for the current user by App.tsx
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const myTasks = tasks;
 
-  // Apply visual status & priority filters
   const filteredTasks = myTasks.filter((t) => {
     const matchesStatus = statusFilter === 'All' || t.status === statusFilter;
     const matchesPriority = priorityFilter === 'All' || t.priority === priorityFilter;
     return matchesStatus && matchesPriority;
   });
 
-  // Calculate user stats
   const completedCount = myTasks.filter((t) => t.status === 'Done').length;
   const activeCount = myTasks.filter((t) => t.status === 'In Progress' || t.status === 'Review').length;
-  const hoursLogged = myTasks.reduce((sum, t) => sum + t.timeLogged, 0);
+  const hoursLogged = myTasks.reduce((sum, t) => sum + getWorkingHours(t), 0);
   const hoursEstimated = myTasks.reduce((sum, t) => sum + t.timeEstimated, 0);
 
-  // Status transition handler
   const handleNextStatus = (e: React.MouseEvent, task: Task) => {
-    e.stopPropagation(); // Avoid selecting the task
+    e.stopPropagation();
     let nextStatus: TaskStatus = task.status;
     if (task.status === 'To Do') nextStatus = 'In Progress';
     else if (task.status === 'In Progress') nextStatus = 'Review';
     else if (task.status === 'Review') nextStatus = 'Done';
+    else return;
 
-    onUpdateTask({
-      ...task,
-      status: nextStatus,
-      activity: [
-        {
-          id: `act-log-${Date.now()}`,
-          type: 'log',
-          user: currentUser,
-          content: `promoted status to "${nextStatus}" via quick action dashboard`,
-          timestamp: nowTimestamp()
-        },
-        ...task.activity
-      ]
-    });
+    onUpdateTask(transitionTaskStatus(task, nextStatus, currentUser));
   };
 
   return (
@@ -205,7 +195,8 @@ export default function EmployeeDashboardView({
                   <div className="flex flex-col gap-0.5 font-mono text-[11px] text-slate-500 font-semibold">
                     <span className="flex items-center gap-1">
                       <span className="material-symbols-outlined text-sm">schedule</span>
-                      {task.timeLogged}h spent / {task.timeEstimated}h planned
+                      {getWorkingHours(task)}h spent / {task.timeEstimated}h planned
+                      {task.status === 'In Progress' ? ' · timer on' : ''}
                     </span>
                     <span className="text-[10px] text-slate-400 font-sans">Due {task.dueDate}</span>
                   </div>

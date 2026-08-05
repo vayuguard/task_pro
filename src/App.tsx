@@ -8,12 +8,10 @@ import {
   defaultScreenForRole
 } from './auth/auth';
 import { getVisibleTasks, normalizeTasks, enrichUserWithEmail } from './utils/tasks';
-import { nowTimestamp } from './utils/time';
 import {
   apiBootstrap,
   apiCreateTask,
-  apiUpdateTask,
-  apiCreateProgressLog
+  apiUpdateTask
 } from './api/client';
 import LoginPage from './components/LoginPage';
 import MfaPage from './components/MfaPage';
@@ -27,10 +25,10 @@ import PerformanceView from './components/PerformanceView';
 import TeamChatView from './components/TeamChatView';
 import SettingsView from './components/SettingsView';
 import NewTaskModal from './components/NewTaskModal';
-import LogProgressModal from './components/LogProgressModal';
 import AccessDenied from './components/AccessDenied';
 import { AnimatePresence, motion, staggerContainer, staggerItem, pageVariants, pageFadeVariants } from './components/ui/motion';
 import { LiquidBackground } from './components/ui/Glass';
+import { syncWorkingHours, transitionTaskStatus } from './utils/taskTiming';
 
 function AppShell() {
   const { session, isLoggedIn, requiresMfa, login, verifyMfa, logout } = useAuth();
@@ -40,7 +38,6 @@ function AppShell() {
   const [activeTaskId, setActiveTaskId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
-  const [showLogProgressModal, setShowLogProgressModal] = useState(false);
   const [employees, setEmployees] = useState<EmployeeMetrics[]>([]);
   const [progressLogs, setProgressLogs] = useState<ProgressLog[]>([]);
   const [health, setHealth] = useState<ProjectHealth[]>(projectsHealth);
@@ -134,9 +131,44 @@ function AppShell() {
   const userRole = session.role;
   const visibleTasks = getVisibleTasks(tasks, currentUser, userRole);
 
+  // Keep live work hours fresh for In Motion tasks
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setTasks((prev) => {
+        let changed = false;
+        const next = prev.map((t) => {
+          if (t.status !== 'In Progress') return t;
+          const synced = syncWorkingHours(t);
+          if (synced.timeLogged !== t.timeLogged) changed = true;
+          return synced;
+        });
+        return changed ? next : prev;
+      });
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const handleUpdateTask = (updatedTask: Task) => {
-    const normalized = normalizeTasks([updatedTask])[0];
-    setTasks((prev) => prev.map((t) => (t.id === normalized.id ? normalized : t)));
+    const prev = tasks.find((t) => t.id === updatedTask.id);
+    let toSave = updatedTask;
+    if (prev && prev.status !== updatedTask.status) {
+      // Prefer timing-aware transition if caller only flipped status
+      const alreadyTimed =
+        Array.isArray(updatedTask.statusHistory) &&
+        updatedTask.statusHistory.length > (prev.statusHistory?.length || 0);
+      if (!alreadyTimed) {
+        toSave = transitionTaskStatus(
+          { ...prev, ...updatedTask, status: prev.status, statusHistory: prev.statusHistory },
+          updatedTask.status,
+          currentUser
+        );
+      }
+    } else if (updatedTask.status === 'In Progress') {
+      toSave = syncWorkingHours(updatedTask);
+    }
+
+    const normalized = normalizeTasks([toSave])[0];
+    setTasks((prevTasks) => prevTasks.map((t) => (t.id === normalized.id ? normalized : t)));
     apiUpdateTask(normalized).catch(console.error);
   };
 
@@ -151,37 +183,6 @@ function AppShell() {
   const handleSelectTask = (task: Task) => {
     setActiveTaskId(task.id);
     setActiveScreen('task-details');
-  };
-
-  const handleLogProgress = (log: { taskId: string; hours: number; notes: string }) => {
-    const task = tasks.find((t) => t.id === log.taskId);
-    if (!task) return;
-
-    const stamp = nowTimestamp();
-    const entry: ProgressLog = {
-      id: `log-${Date.now()}`,
-      taskId: log.taskId,
-      taskTitle: task.title,
-      hours: log.hours,
-      notes: log.notes,
-      timestamp: stamp,
-      author: currentUser.name
-    };
-
-    setProgressLogs((prev) => [entry, ...prev]);
-    apiCreateProgressLog(entry).catch(console.error);
-
-    handleUpdateTask({
-      ...task,
-      timeLogged: task.timeLogged + log.hours,
-      activity: [{
-        id: `act-log-${Date.now()}`,
-        type: 'log',
-        user: currentUser,
-        content: `logged ${log.hours}h: "${log.notes}"`,
-        timestamp: stamp
-      }, ...task.activity]
-    });
   };
 
   const handleScreenChange = (screen: ActiveScreen) => {
@@ -235,6 +236,7 @@ function AppShell() {
         return (
           <KanbanBoardView
             tasks={visibleTasks}
+            currentUser={currentUser}
             onTaskSelect={handleSelectTask}
             onUpdateTask={handleUpdateTask}
           />
@@ -304,7 +306,6 @@ function AppShell() {
         userRole={userRole}
         onScreenChange={handleScreenChange}
         onNewTaskClick={() => setShowNewTaskModal(true)}
-        onLogProgressClick={() => setShowLogProgressModal(true)}
         onLogout={logout}
         canCreateTasks={canCreateTasks(userRole)}
         open={sidebarOpen}
@@ -401,13 +402,6 @@ function AppShell() {
           teamMembers={teamMembers}
         />
       )}
-
-      <LogProgressModal
-        isOpen={showLogProgressModal}
-        onClose={() => setShowLogProgressModal(false)}
-        tasks={visibleTasks.filter((t) => t.status !== 'Done')}
-        onSubmit={handleLogProgress}
-      />
     </div>
   );
 }

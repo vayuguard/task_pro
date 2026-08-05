@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Task, User } from '../types';
 import { isTaskAssignedToUser, enrichUserWithEmail } from '../utils/tasks';
 import { priorityBadgeClass } from '../utils/priority';
+import { getWorkingHours } from '../utils/taskTiming';
 import { PageHeader, StatCard, GlassPanel } from './ui/Glass';
 import { staggerContainer, staggerItem } from './ui/motion';
 
@@ -25,7 +26,7 @@ export default function AdminDashboardView({
   const completed = tasks.filter((t) => t.status === 'Done').length;
   const todo = tasks.filter((t) => t.status === 'To Do').length;
   const totalEstimated = tasks.reduce((sum, t) => sum + t.timeEstimated, 0);
-  const totalLogged = tasks.reduce((sum, t) => sum + t.timeLogged, 0);
+  const totalLogged = tasks.reduce((sum, t) => sum + getWorkingHours(t), 0);
   const highestOpen = tasks.filter((t) => t.status !== 'Done' && (t.priority === 'Highest' || t.priority === 'High')).length;
   const overdue = tasks.filter((t) => {
     if (t.status === 'Done') return false;
@@ -47,7 +48,7 @@ export default function AdminDashboardView({
   const memberWorkloads = teamMembers.map((member) => {
     const enriched = enrichUserWithEmail(member);
     const assignedTasks = tasks.filter((t) => isTaskAssignedToUser(t, enriched));
-    const hoursLogged = assignedTasks.reduce((sum, t) => sum + t.timeLogged, 0);
+    const hoursLogged = assignedTasks.reduce((sum, t) => sum + getWorkingHours(t), 0);
     const hoursEstimated = assignedTasks.reduce((sum, t) => sum + t.timeEstimated, 0);
     return {
       member: enriched,
@@ -178,7 +179,7 @@ export default function AdminDashboardView({
                   <td className="py-3 px-5">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${task.status === 'Done' ? 'bg-emerald-100/80 text-emerald-700' : task.status === 'In Progress' ? 'bg-blue-100/80 text-blue-700' : 'bg-slate-100/80 text-slate-600'}`}>{task.status}</span>
                   </td>
-                  <td className="py-3 px-5 font-mono text-slate-500">{task.timeLogged}h/{task.timeEstimated}h</td>
+                  <td className="py-3 px-5 font-mono text-slate-500">{getWorkingHours(task)}h/{task.timeEstimated}h</td>
                   <td className="py-3 px-5 text-right font-semibold text-rose-500">{task.dueDate}</td>
                 </motion.tr>
               ))}
