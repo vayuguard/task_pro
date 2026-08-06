@@ -21,20 +21,20 @@ export interface AuthSession {
 const SESSION_KEY = 'taskpro_session';
 
 /** Demo MFA code for admin accounts */
-export const DEMO_MFA_CODE = '123456';
+export const DEMO_MFA_CODE = '082022';
 
 /** Only admin is seeded. Employees are created by admin and notified by email. */
 export const ADMIN_SEED: AuthAccount = {
   id: 'admin-1',
-  email: 'ritesh.prajapati@vayuguard.com',
-  password: 'rudr123',
+  email: 'reachus@vayuguard.com',
+  password: 'vgctpl_ad@2022',
   role: 'admin',
   mfaRequired: true,
   profile: {
-    name: 'Ritesh Prajapati',
-    email: 'ritesh.prajapati@vayuguard.com',
+    name: 'Vayuguard Admin',
+    email: 'reachus@vayuguard.com',
     role: 'Admin',
-    avatar: 'https://ui-avatars.com/api/?name=Ritesh+Prajapati&background=6366f1&color=fff'
+    avatar: 'https://ui-avatars.com/api/?name=Vayuguard+Admin&background=6366f1&color=fff'
   }
 };
 
@@ -69,7 +69,8 @@ export function verifyMfa(code: string): { ok: true; session: AuthSession } | { 
     return { ok: false as const, error: 'No active session. Please log in again.' };
   }
 
-  if (code.trim() !== DEMO_MFA_CODE) {
+  const submitted = String(code ?? '').trim().replace(/\s+/g, '');
+  if (submitted !== DEMO_MFA_CODE) {
     return { ok: false as const, error: 'Invalid verification code.' };
   }
 

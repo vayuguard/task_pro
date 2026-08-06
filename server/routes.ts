@@ -117,12 +117,17 @@ export function createApiRouter(): Router {
 
   router.post('/auth/mfa', async (req: Request, res: Response) => {
     try {
-      const { email, code } = req.body as { email?: string; code?: string };
-      if (!email || !code) {
+      const { email, code } = req.body as { email?: string; code?: unknown };
+      if (!email || code == null || String(code).trim() === '') {
         res.status(400).json({ ok: false, error: 'Email and code required.' });
         return;
       }
-      if (code.trim() !== DEMO_MFA_CODE) {
+
+      // Keep as string so leading zeros (e.g. 082022) are never dropped.
+      const submitted = String(code).trim().replace(/\s+/g, '');
+      const meta = await getDb().collection('meta').findOne({ key: 'app' });
+      const expected = String(meta?.demoMfaCode || DEMO_MFA_CODE).trim();
+      if (submitted !== expected) {
         res.status(401).json({ ok: false, error: 'Invalid verification code.' });
         return;
       }

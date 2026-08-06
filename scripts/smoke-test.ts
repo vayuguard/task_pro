@@ -30,8 +30,8 @@ console.log('\nTaskPro smoke tests\n');
 
 assert(AUTH_ACCOUNTS.length === 1, 'only admin is seeded in AUTH_ACCOUNTS');
 assert(AUTH_ACCOUNTS[0].role === 'admin', 'seeded account is admin');
-assert(ADMIN_SEED.email === 'ritesh.prajapati@vayuguard.com', 'admin email is ritesh.prajapati@vayuguard.com');
-assert(DEMO_MFA_CODE === '123456', 'demo MFA code is 123456');
+assert(ADMIN_SEED.email === 'reachus@vayuguard.com', 'admin email is reachus@vayuguard.com');
+assert(DEMO_MFA_CODE === '082022', 'demo MFA code is 082022');
 
 assert(canAccessScreen('admin', 'admin-dashboard'), 'admin can access dashboard');
 assert(canAccessScreen('admin', 'performance'), 'admin can access performance');
@@ -155,7 +155,7 @@ assert(perf.label === 'Early', 'finished early vs 2h plan');
 assert((perf.efficiencyPct || 0) > 100, 'efficiency over 100% when early');
 
 assert(getMemberEmail('Sarah Chen') === 'sarah@taskpro.com', 'Sarah Chen email map is distinct');
-assert(getMemberEmail('Ritesh Prajapati') === 'ritesh.prajapati@vayuguard.com', 'Ritesh email map correct');
+assert(getMemberEmail('Vayuguard Admin') === 'reachus@vayuguard.com', 'Vayuguard Admin email map correct');
 
 const hashed = hashPassword('testpass');
 assert(verifyPassword('testpass', hashed), 'scrypt hash verifies');

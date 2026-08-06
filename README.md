@@ -16,9 +16,9 @@ Open [http://localhost:3100](http://localhost:3100)
 
 | Field | Value |
 |-------|-------|
-| Email | `ritesh.prajapati@vayuguard.com` |
-| Password | `rudr123` |
-| MFA | `123456` |
+| Email | `reachus@vayuguard.com` |
+| Password | `vgctpl_ad@2022` |
+| MFA | `082022` |
 
 Employees are created by admin in **Settings → Add employee** (credentials emailed or logged to console).
 

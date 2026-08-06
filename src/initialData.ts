@@ -8,9 +8,9 @@ export const teamMembers: User[] = [
     role: "Senior Software Engineer"
   },
   {
-    name: "Ritesh Prajapati",
-    email: "ritesh.prajapati@vayuguard.com",
-    avatar: "https://ui-avatars.com/api/?name=Ritesh+Prajapati&background=6366f1&color=fff",
+    name: "Vayuguard Admin",
+    email: "reachus@vayuguard.com",
+    avatar: "https://ui-avatars.com/api/?name=Vayuguard+Admin&background=6366f1&color=fff",
     role: "Admin"
   },
   {
@@ -42,7 +42,7 @@ export const employeeMetrics: EmployeeMetrics[] = [
   },
   {
     id: 'emp-2',
-    name: 'Ritesh Prajapati',
+    name: 'Vayuguard Admin',
     role: 'Admin',
     avatar: teamMembers[1].avatar,
     velocity: 12.5,

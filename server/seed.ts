@@ -2,7 +2,7 @@ import { Db } from 'mongodb';
 import { ADMIN_SEED, DEMO_MFA_CODE } from '../src/auth/auth.ts';
 import { projectsHealth } from '../src/initialData.ts';
 import { nowTimestamp } from '../src/utils/time.ts';
-import { hashPassword, isHashedPassword } from './auth/password.ts';
+import { hashPassword } from './auth/password.ts';
 
 /** memberEmails = employees allowed in the channel. Admins always have access. */
 const CHANNELS = [
@@ -24,19 +24,16 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
       { $set: { memberEmails: [] } }
     );
 
-    // Keep admin login in sync with ADMIN_SEED without wiping employees
+    // Keep admin login in sync with ADMIN_SEED without wiping employees.
+    // Always rehash from ADMIN_SEED so credential updates apply on restart.
     const admin = ADMIN_SEED;
-    const existingAdmin = await usersCol.findOne({ role: 'admin' });
-    const password = existingAdmin?.password && isHashedPassword(String(existingAdmin.password))
-      ? existingAdmin.password
-      : hashPassword(admin.password);
     await usersCol.updateMany(
       { $or: [{ id: admin.id }, { role: 'admin' }] },
       {
         $set: {
           id: admin.id,
           email: admin.email.toLowerCase(),
-          password,
+          password: hashPassword(admin.password),
           role: admin.role,
           mfaRequired: admin.mfaRequired,
           profile: admin.profile
@@ -47,6 +44,7 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
       {
         $or: [
           { email: admin.email.toLowerCase() },
+          { email: 'ritesh.prajapati@vayuguard.com' },
           { email: 'admin@taskpro.com' },
           { role: 'Admin' }
         ]
@@ -63,6 +61,24 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
     );
 
     console.log(`[mongo] Already has data — skip full seed; admin synced to ${admin.email}`);
+
+    await db.collection('meta').updateOne(
+      { key: 'app' },
+      {
+        $set: {
+          demoMfaCode: DEMO_MFA_CODE,
+          name: 'TaskPro',
+          database: 'taskpro_vg',
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          key: 'app',
+          seedMode: 'admin-only',
+          seededAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
     return;
   }
 

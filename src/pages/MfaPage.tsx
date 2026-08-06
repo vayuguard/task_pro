@@ -31,7 +31,16 @@ export default function MfaPage() {
         <p className="text-sm text-ink-muted mt-1">Enter the 6-digit code for {session?.email}</p>
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           {error && <div className="text-sm text-danger">{error}</div>}
-          <Input label="Verification code" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" maxLength={6} required />
+          <Input
+            label="Verification code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            required
+            hint="6-digit MFA code"
+          />
           <Button type="submit" className="w-full" loading={loading}>
             Verify
           </Button>
