@@ -31,7 +31,7 @@ console.log('\nTaskPro smoke tests\n');
 assert(AUTH_ACCOUNTS.length === 1, 'only admin is seeded in AUTH_ACCOUNTS');
 assert(AUTH_ACCOUNTS[0].role === 'admin', 'seeded account is admin');
 assert(ADMIN_SEED.email === 'reachus@vayuguard.com', 'admin email is reachus@vayuguard.com');
-assert(DEMO_MFA_CODE === '082022', 'demo MFA code is 082022');
+assert(DEMO_MFA_CODE === '202208', 'demo MFA code is 202208');
 
 assert(canAccessScreen('admin', 'admin-dashboard'), 'admin can access dashboard');
 assert(canAccessScreen('admin', 'performance'), 'admin can access performance');

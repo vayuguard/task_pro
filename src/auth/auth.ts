@@ -21,7 +21,7 @@ export interface AuthSession {
 const SESSION_KEY = 'taskpro_session';
 
 /** Demo MFA code for admin accounts */
-export const DEMO_MFA_CODE = '082022';
+export const DEMO_MFA_CODE = '202208';
 
 /** Only admin is seeded. Employees are created by admin and notified by email. */
 export const ADMIN_SEED: AuthAccount = {

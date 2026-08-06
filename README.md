@@ -18,7 +18,7 @@ Open [http://localhost:3100](http://localhost:3100)
 |-------|-------|
 | Email | `reachus@vayuguard.com` |
 | Password | `vgctpl_ad@2022` |
-| MFA | `082022` |
+| MFA | `202208` |
 
 Employees are created by admin in **Settings → Add employee** (credentials emailed or logged to console).
 

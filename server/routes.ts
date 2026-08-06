@@ -123,7 +123,7 @@ export function createApiRouter(): Router {
         return;
       }
 
-      // Keep as string so leading zeros (e.g. 082022) are never dropped.
+      // Keep MFA as a string so formatting is never altered.
       const submitted = String(code).trim().replace(/\s+/g, '');
       const meta = await getDb().collection('meta').findOne({ key: 'app' });
       const expected = String(meta?.demoMfaCode || DEMO_MFA_CODE).trim();
