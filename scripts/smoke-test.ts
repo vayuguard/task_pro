@@ -221,15 +221,15 @@ const score = computePerformanceScore(
 assert(score.overall != null || score.eligibleTasks === 0, 'scoring engine returns result');
 
 function employeePatch(body: Partial<Task>): Partial<Task> {
-  const allowed = ['title', 'description', 'labels', 'subtasks', 'attachments', 'activity', 'priority', 'dueDate', 'timeEstimated'];
+  const allowed = ['title', 'description', 'labels', 'subtasks', 'attachments', 'activity', 'priority', 'dueDate'];
   const out: Record<string, unknown> = {};
   for (const k of allowed) {
     if (k in body) out[k] = (body as Record<string, unknown>)[k];
   }
   return out as Partial<Task>;
 }
-const stripped = employeePatch({ title: 'ok', timeEstimated: 99, status: 'Done' as const });
-assert(stripped.title === 'ok' && stripped.timeEstimated === 99 && !('status' in stripped), 'employee PUT allows estimate but not status');
+const stripped = employeePatch({ title: 'ok', timeEstimated: 99 });
+assert(stripped.title === 'ok' && !('timeEstimated' in stripped), 'employee PUT strips estimate');
 
 const customSchedule = scheduleForEmail('jane@company.com', [
   { email: 'jane@company.com', startHour: 9, endHour: 17 }

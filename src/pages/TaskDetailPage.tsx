@@ -17,6 +17,7 @@ import { Tabs } from '../components/ui/Tabs';
 import { useLiveTick } from '../hooks/useLiveTick';
 import { isWithinBusinessHours, nextBusinessStart } from '../utils/businessTime';
 import { EstimateInput } from '../components/EstimateInput';
+import { formatEstimate } from '../utils/estimate';
 
 const statuses: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
 
@@ -113,8 +114,8 @@ export default function TaskDetailPage() {
   };
 
   const saveEstimate = async () => {
-    if (!estimateChanged) return;
-    if (isAdmin && !estimateReason.trim()) return;
+    if (!isAdmin || !estimateChanged) return;
+    if (!estimateReason.trim()) return;
     await updateTask({ ...task, timeEstimated: estimateValue }, { estimateReason: estimateReason.trim() });
     setEstimateDraft(null);
     setEstimateReason('');
@@ -341,52 +342,33 @@ export default function TaskDetailPage() {
                 </select>
               </div>
             )}
+            {isAdmin && (
+              <div>
+                <Input
+                  label="Due date"
+                  type="date"
+                  value={dueInput}
+                  onChange={(e) => setDueInput(e.target.value)}
+                />
+                <div className="flex items-center gap-3 mt-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!dueChanged}
+                    onClick={() => void saveDueDate()}
+                  >
+                    Save due date
+                  </Button>
+                  <span className="text-xs text-ink-faint">Blank = no due date.</span>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="label">Planned</p>
-                {isAdmin && (
-                  <div className="space-y-2 mb-3">
-                    <Input
-                      label="Due date"
-                      type="date"
-                      value={dueInput}
-                      onChange={(e) => setDueInput(e.target.value)}
-                    />
-                    <div className="flex items-center gap-3">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={!dueChanged}
-                        onClick={() => void saveDueDate()}
-                      >
-                        Save due date
-                      </Button>
-                      <span className="text-xs text-ink-faint">Blank = “No due date”.</span>
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-2">
-                    <EstimateInput hours={estimateValue} onChange={setEstimateDraft} />
-                    {estimateChanged && (
-                      <>
-                        {isAdmin && (
-                          <Input
-                            label="Reason for change"
-                            value={estimateReason}
-                            onChange={(e) => setEstimateReason(e.target.value)}
-                            required
-                          />
-                        )}
-                        <Button
-                          type="button"
-                          onClick={saveEstimate}
-                          disabled={isAdmin && !estimateReason.trim()}
-                        >
-                          Save estimate
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                <p className="text-lg font-bold">{formatEstimate(task.timeEstimated)}</p>
+                <p className="text-xs text-ink-faint">{task.timeEstimated.toFixed(1)}h business</p>
               </div>
               <div>
                 <p className="label">Spent (business)</p>
@@ -396,6 +378,25 @@ export default function TaskDetailPage() {
                 <p className="text-xs text-ink-faint">Wall: {getTaskWallHours(task)}h</p>
               </div>
             </div>
+            {isAdmin && (
+              <div className="rounded-xl border border-border bg-surface-sunken/40 p-3 space-y-3">
+                <p className="text-xs font-semibold text-ink">Edit estimate</p>
+                <EstimateInput hours={estimateValue} onChange={setEstimateDraft} />
+                {estimateChanged && (
+                  <>
+                    <Input
+                      label="Reason for change"
+                      value={estimateReason}
+                      onChange={(e) => setEstimateReason(e.target.value)}
+                      required
+                    />
+                    <Button type="button" onClick={saveEstimate} disabled={!estimateReason.trim()}>
+                      Save estimate
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="panel p-4">
             <h3 className="text-sm font-semibold mb-2">Time by section</h3>

@@ -52,17 +52,7 @@ async function appendTaskEvent(taskId: string, type: string, actor: string, payl
 }
 
 function employeeAllowedFields(body: Partial<Task>): Partial<Task> {
-  const allowed = [
-    'title',
-    'description',
-    'labels',
-    'subtasks',
-    'attachments',
-    'activity',
-    'priority',
-    'dueDate',
-    'timeEstimated'
-  ];
+  const allowed = ['title', 'description', 'labels', 'subtasks', 'attachments', 'activity', 'priority', 'dueDate'];
   const out: Record<string, unknown> = {};
   for (const k of allowed) {
     if (k in body) out[k] = (body as Record<string, unknown>)[k];
@@ -551,7 +541,12 @@ export function createApiRouter(): Router {
 
   router.post('/tasks', requireAuth, async (req: AuthedRequest, res) => {
     try {
-      const task = normalizeTask({ ...req.body, timingTrust: 'certified', version: 0 });
+      const body = req.body as Task;
+      const estimate =
+        req.session!.role === 'admin' && typeof body.timeEstimated === 'number'
+          ? body.timeEstimated
+          : 0;
+      const task = normalizeTask({ ...body, timeEstimated: estimate, timingTrust: 'certified', version: 0 });
       await getDb().collection('tasks').insertOne({ ...task, updatedAt: new Date() });
       await appendTaskEvent(task.id, 'created', req.session!.email, { status: task.status });
       res.json({ ok: true, task });
@@ -677,6 +672,7 @@ export function createApiRouter(): Router {
         delete (patch as Record<string, unknown>).timeLogged;
         delete (patch as Record<string, unknown>).completedAt;
         delete (patch as Record<string, unknown>).assignee;
+        delete (patch as Record<string, unknown>).timeEstimated;
         delete (patch as Record<string, unknown>).timingTrust;
       } else {
         if (

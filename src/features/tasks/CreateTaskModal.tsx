@@ -20,6 +20,7 @@ export function CreateTaskModal({ open, onClose }: { open: boolean; onClose: () 
   const [project, setProject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
+  const isAdmin = session?.role === 'admin';
   const [estimate, setEstimate] = useState(2);
   const [due, setDue] = useState('');
   const [assigneeIdx, setAssigneeIdx] = useState(0);
@@ -55,7 +56,7 @@ export function CreateTaskModal({ open, onClose }: { open: boolean; onClose: () 
       createdDate: nowTimestamp(),
       dueDate: due ? dueDateFromInput(due) : 'No due date',
       labels: [],
-      timeEstimated: estimate,
+      timeEstimated: isAdmin ? estimate : 0,
       timeLogged: 0,
       subtasks: [],
       attachments: [],
@@ -91,7 +92,7 @@ export function CreateTaskModal({ open, onClose }: { open: boolean; onClose: () 
             ))}
           </select>
         </div>
-        <EstimateInput hours={estimate} onChange={setEstimate} />
+        {isAdmin && <EstimateInput hours={estimate} onChange={setEstimate} />}
         <Input label="Due date" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
         {canAssign && teamMembers.length > 0 && (
           <div>
