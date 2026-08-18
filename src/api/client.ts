@@ -2,7 +2,7 @@ import { Task, EmployeeMetrics, ProgressLog, ProjectHealth, User, TaskStatus } f
 import { AuthSession } from '../auth/auth';
 
 const API = '/api';
-export type GeoPoint = { lat: number; lng: number; accuracy?: number };
+export type GeoPoint = { lat: number; lng: number; accuracy?: number; label?: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -142,7 +142,7 @@ export async function apiReviewTask(
   });
 }
 
-export async function apiArchiveTask(taskId: string): Promise<{ ok: true; archived: string }> {
+export async function apiDeleteTask(taskId: string): Promise<{ ok: true; deleted: string }> {
   return request(`/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
 }
 

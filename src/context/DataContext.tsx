@@ -8,7 +8,7 @@ import {
   apiPauseTimer,
   apiResumeTimer,
   apiReviewTask,
-  apiArchiveTask
+  apiDeleteTask
 } from '../api/client';
 import { normalizeTasks } from '../utils/tasks';
 import { useAuth } from '../auth/AuthContext';
@@ -30,7 +30,7 @@ interface DataContextValue {
   pauseTimer: (taskId: string) => Promise<Task>;
   resumeTimer: (taskId: string) => Promise<Task>;
   reviewTask: (taskId: string, outcome: 'accepted' | 'changes_requested') => Promise<Task>;
-  archiveTask: (taskId: string) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
   addTask: (task: Task) => Promise<Task>;
   visibleTasks: Task[];
 }
@@ -192,14 +192,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [replaceTasks, toast]
   );
 
-  const archiveTask = useCallback(
+  const deleteTask = useCallback(
     async (taskId: string) => {
       try {
-        await apiArchiveTask(taskId);
+        await apiDeleteTask(taskId);
         setTasks((prev) => prev.filter((t) => t.id !== taskId));
-        toast('Task archived', 'success');
+        toast('Task deleted', 'success');
       } catch (err) {
-        toast(err instanceof Error ? err.message : 'Archive failed', 'error');
+        toast(err instanceof Error ? err.message : 'Delete failed', 'error');
         throw err;
       }
     },
@@ -250,7 +250,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         pauseTimer,
         resumeTimer,
         reviewTask,
-        archiveTask,
+        deleteTask,
         addTask,
         visibleTasks
       }}

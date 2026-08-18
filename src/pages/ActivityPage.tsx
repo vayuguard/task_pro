@@ -30,10 +30,10 @@ export default function ActivityPage() {
       ip: string;
       enterAt: string;
       enterIp: string;
-      enterLocation: { lat: number; lng: number; accuracy?: number } | null;
+      enterLocation: { lat: number; lng: number; accuracy?: number; label?: string } | null;
       exitAt: string | null;
       exitIp: string;
-      exitLocation: { lat: number; lng: number; accuracy?: number } | null;
+      exitLocation: { lat: number; lng: number; accuracy?: number; label?: string } | null;
     }>
   >([]);
 
@@ -129,18 +129,14 @@ export default function ActivityPage() {
                     <td className="p-3 font-mono text-ink-faint">
                       {entry.enterIp || entry.ip || '—'}
                     </td>
-                    <td className="p-3 font-mono text-ink-faint text-xs">
-                      {entry.enterLocation
-                        ? `${entry.enterLocation.lat.toFixed(5)}, ${entry.enterLocation.lng.toFixed(5)}`
-                        : '—'}
+                    <td className="p-3 text-ink-muted text-xs max-w-[14rem]">
+                      {entry.enterLocation?.label || '—'}
                     </td>
                     <td className="p-3 tabular-nums">
                       {entry.enterAt ? nowTimestamp(new Date(entry.enterAt)) : '—'}
                     </td>
-                    <td className="p-3 font-mono text-ink-faint text-xs">
-                      {entry.exitLocation
-                        ? `${entry.exitLocation.lat.toFixed(5)}, ${entry.exitLocation.lng.toFixed(5)}`
-                        : '—'}
+                    <td className="p-3 text-ink-muted text-xs max-w-[14rem]">
+                      {entry.exitLocation?.label || '—'}
                     </td>
                     <td className="p-3 tabular-nums">
                       {entry.exitAt ? nowTimestamp(new Date(entry.exitAt)) : '—'}

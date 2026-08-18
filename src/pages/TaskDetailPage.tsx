@@ -24,7 +24,7 @@ const statuses: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
-  const { visibleTasks, teamMembers, loading, error, reload, updateTask, transitionTask, pauseTimer, resumeTimer, reviewTask, archiveTask, holidayDates } = useData();
+  const { visibleTasks, teamMembers, loading, error, reload, updateTask, transitionTask, pauseTimer, resumeTimer, reviewTask, deleteTask, holidayDates } = useData();
   const task = visibleTasks.find((t) => t.id === id);
   const navigate = useNavigate();
   const [comment, setComment] = useState('');
@@ -412,19 +412,19 @@ export default function TaskDetailPage() {
           </div>
           {isAdmin && (
             <div className="panel p-4">
-              <h3 className="text-sm font-semibold mb-2">Archive</h3>
-              <p className="text-xs text-ink-muted mb-3">Hides this task from boards. Hours stay on the timesheet.</p>
+              <h3 className="text-sm font-semibold mb-2">Delete</h3>
+              <p className="text-xs text-ink-muted mb-3">Permanently removes this task. This cannot be undone.</p>
               <Button
                 type="button"
                 variant="danger"
-                icon="archive"
+                icon="delete"
                 onClick={async () => {
-                  if (!window.confirm('Archive this task?')) return;
-                  await archiveTask(task.id);
+                  if (!window.confirm('Delete this task permanently? This cannot be undone.')) return;
+                  await deleteTask(task.id);
                   navigate('/tasks');
                 }}
               >
-                Archive task
+                Delete task
               </Button>
             </div>
           )}

@@ -14,6 +14,7 @@ import { formatTimeIST, formatIsoDateIST } from '../src/utils/time.ts';
 import { buildTimesheet } from './timesheet.ts';
 import { isPastLoginWindow, isPastWorkHours } from './istTime.ts';
 import { patchSessionGeo } from './auth/session.ts';
+import { withPlaceName } from './geo.ts';
 
 function stripMongoId<T extends Record<string, unknown>>(doc: T | null): Omit<T, '_id'> | null {
   if (!doc) return null;
@@ -167,6 +168,12 @@ export function createApiRouter(): Router {
           typeof location?.lng === 'number' && Number.isFinite(location.lng) ? location.lng : undefined
       });
 
+      const enterLocation = await withPlaceName(
+        typeof location?.lat === 'number' && typeof location?.lng === 'number'
+          ? { lat: location.lat, lng: location.lng, accuracy: location.accuracy }
+          : null
+      );
+
       // Record login event for admin visibility.
       const loginRecord = {
         email: (account.email as string).toLowerCase(),
@@ -175,17 +182,7 @@ export function createApiRouter(): Router {
         loginAt: new Date(),
         enterAt: new Date(),
         enterIp: loginIp,
-        enterLocation:
-          typeof location?.lat === 'number' && typeof location?.lng === 'number'
-            ? {
-                lat: location.lat,
-                lng: location.lng,
-                accuracy:
-                  typeof location.accuracy === 'number' && Number.isFinite(location.accuracy)
-                    ? location.accuracy
-                    : undefined
-              }
-            : null,
+        enterLocation,
         exitAt: null,
         exitLocation: null,
         sessionId: serverSession.id
@@ -254,20 +251,16 @@ export function createApiRouter(): Router {
     const logoutIp =
       String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
     if (session) {
-      const exitLocation =
+      const exitLocation = await withPlaceName(
         typeof location?.lat === 'number' &&
-        typeof location?.lng === 'number' &&
-        Number.isFinite(location.lat) &&
-        Number.isFinite(location.lng)
-          ? {
-              lat: location.lat,
-              lng: location.lng,
-              accuracy:
-                typeof location.accuracy === 'number' && Number.isFinite(location.accuracy)
-                  ? location.accuracy
-                  : undefined
-            }
-          : null;
+          typeof location?.lng === 'number' &&
+          Number.isFinite(location.lat) &&
+          Number.isFinite(location.lng)
+          ? { lat: location.lat, lng: location.lng, accuracy: location.accuracy }
+          : typeof session.loginLat === 'number' && typeof session.loginLng === 'number'
+            ? { lat: session.loginLat, lng: session.loginLng, source: 'last-known-login' }
+            : null
+      );
       void getDb()
         .collection('login_log')
         .updateOne(
@@ -738,18 +731,14 @@ export function createApiRouter(): Router {
         res.status(404).json({ ok: false, error: 'Task not found' });
         return;
       }
-      const archivedAt = new Date().toISOString();
-      await getDb().collection('tasks').updateOne(
-        { id: req.params.id },
-        { $set: { archivedAt, updatedAt: new Date() } }
-      );
+      await getDb().collection('tasks').deleteOne({ id: req.params.id });
       await appendAudit(
         { email: req.session!.email, role: req.session!.role },
-        'task.archive',
+        'task.delete',
         req.params.id,
-        {}
+        { title: String((existing as { title?: string }).title || '') }
       );
-      res.json({ ok: true, archived: req.params.id });
+      res.json({ ok: true, deleted: req.params.id });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
@@ -1052,44 +1041,29 @@ export function createApiRouter(): Router {
     try {
       const limit = Math.min(200, Math.max(10, Number(req.query.limit) || 50));
       const docs = await getDb().collection('login_log').find({}).sort({ loginAt: -1 }).limit(limit).toArray();
-      res.json({
-        ok: true,
-        entries: docs.map((d) => ({
+      const entries = [];
+      for (const d of docs) {
+        const enterLocation = await withPlaceName(d.enterLocation as { lat?: number; lng?: number; label?: string } | null);
+        const exitLocation = await withPlaceName(d.exitLocation as { lat?: number; lng?: number; label?: string } | null);
+        if (enterLocation?.label && !(d.enterLocation as { label?: string } | null)?.label) {
+          void getDb().collection('login_log').updateOne({ _id: d._id }, { $set: { enterLocation } });
+        }
+        if (exitLocation?.label && !(d.exitLocation as { label?: string } | null)?.label) {
+          void getDb().collection('login_log').updateOne({ _id: d._id }, { $set: { exitLocation } });
+        }
+        entries.push({
           email: String(d.email),
           name: String(d.name || ''),
           ip: String(d.ip || ''),
           enterAt: d.enterAt || d.loginAt,
           enterIp: String(d.enterIp || d.ip || ''),
-          enterLocation:
-            d.enterLocation &&
-            typeof d.enterLocation === 'object' &&
-            d.enterLocation != null
-              ? {
-                  lat: Number((d.enterLocation as { lat?: number }).lat),
-                  lng: Number((d.enterLocation as { lng?: number }).lng),
-                  accuracy:
-                    (d.enterLocation as { accuracy?: number }).accuracy != null
-                      ? Number((d.enterLocation as { accuracy?: number }).accuracy)
-                      : undefined
-                }
-              : null,
+          enterLocation,
           exitAt: d.exitAt || null,
           exitIp: String(d.exitIp || ''),
-          exitLocation:
-            d.exitLocation &&
-            typeof d.exitLocation === 'object' &&
-            d.exitLocation != null
-              ? {
-                  lat: Number((d.exitLocation as { lat?: number }).lat),
-                  lng: Number((d.exitLocation as { lng?: number }).lng),
-                  accuracy:
-                    (d.exitLocation as { accuracy?: number }).accuracy != null
-                      ? Number((d.exitLocation as { accuracy?: number }).accuracy)
-                      : undefined
-                }
-              : null
-        }))
-      });
+          exitLocation
+        });
+      }
+      res.json({ ok: true, entries });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
