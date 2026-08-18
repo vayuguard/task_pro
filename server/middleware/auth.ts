@@ -24,7 +24,16 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       // Mark office exit time for admin monitoring.
       void getDb().collection('login_log').updateOne(
         { sessionId: session.id },
-        { $set: { exitAt: new Date(), exitIp: loginIp } }
+        {
+          $set: {
+            exitAt: new Date(),
+            exitIp: loginIp,
+            exitLocation:
+              typeof session.loginLat === 'number' && typeof session.loginLng === 'number'
+                ? { lat: session.loginLat, lng: session.loginLng, source: 'last-known-login' }
+                : null
+          }
+        }
       );
       await destroySession(req, res);
       res.status(401).json({ ok: false, error: 'Work hours ended at 6:00 PM IST. You have been logged out.' });

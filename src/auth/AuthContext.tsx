@@ -1,13 +1,17 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { AuthSession, isAuthenticated, needsMfa } from './auth';
-import { apiLogin, apiVerifyMfa, apiLogout, apiMe } from '../api/client';
+import { apiLogin, apiVerifyMfa, apiLogout, apiMe, type GeoPoint } from '../api/client';
 
 interface AuthContextValue {
   session: AuthSession | null;
   isLoggedIn: boolean;
   requiresMfa: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: true; mfaRequired: boolean } | { ok: false; error: string }>;
+  login: (
+    email: string,
+    password: string,
+    location?: GeoPoint
+  ) => Promise<{ ok: true; mfaRequired: boolean } | { ok: false; error: string }>;
   verifyMfa: (code: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => void;
 }
@@ -25,9 +29,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, location?: GeoPoint) => {
     try {
-      const result = await apiLogin(email, password);
+      const result = await apiLogin(email, password, location);
       setSession(result.session);
       return { ok: true as const, mfaRequired: Boolean(result.mfaRequired) };
     } catch (err) {
@@ -47,7 +51,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.email]);
 
   const logout = useCallback(() => {
-    apiLogout().catch(() => {});
+    const readLocation = (): Promise<GeoPoint | undefined> =>
+      new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve(undefined);
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
+            });
+          },
+          () => resolve(undefined),
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 60_000 }
+        );
+      });
+
+    void readLocation()
+      .then((location) => apiLogout(location))
+      .catch(() => {});
     setSession(null);
   }, []);
 

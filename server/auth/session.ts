@@ -18,6 +18,8 @@ export interface ServerSession {
   loginCity?: string;
   loginRegion?: string;
   loginCountry?: string;
+  loginLat?: number;
+  loginLng?: number;
 }
 
 function parseCookies(header: string | undefined): Record<string, string> {

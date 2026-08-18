@@ -94,7 +94,11 @@ export function createApiRouter(): Router {
 
   router.post('/auth/login', async (req: Request, res: Response) => {
     try {
-      const { email, password } = req.body as { email?: string; password?: string };
+      const { email, password, location } = req.body as {
+        email?: string;
+        password?: string;
+        location?: { lat?: number; lng?: number; accuracy?: number };
+      };
       if (!email || !password) {
         res.status(400).json({ ok: false, error: 'Email and password required.' });
         return;
@@ -121,6 +125,19 @@ export function createApiRouter(): Router {
           res.status(403).json({ ok: false, error: 'Login window closed between 10:30 AM and 12:30 PM IST. Please try again at 12:30 PM.' });
           return;
         }
+        if (
+          !location ||
+          typeof location.lat !== 'number' ||
+          typeof location.lng !== 'number' ||
+          !Number.isFinite(location.lat) ||
+          !Number.isFinite(location.lng)
+        ) {
+          res.status(403).json({
+            ok: false,
+            error: 'Employee location permission is required for login.'
+          });
+          return;
+        }
       }
 
       const loginIp =
@@ -136,7 +153,11 @@ export function createApiRouter(): Router {
         email: account.email as string,
         role: account.role as 'admin' | 'employee',
         profile: account.profile as { name: string; email?: string; avatar: string; role?: string },
-        mfaVerified: !(account.mfaRequired as boolean)
+        mfaVerified: !(account.mfaRequired as boolean),
+        loginLat:
+          typeof location?.lat === 'number' && Number.isFinite(location.lat) ? location.lat : undefined,
+        loginLng:
+          typeof location?.lng === 'number' && Number.isFinite(location.lng) ? location.lng : undefined
       });
 
       // Record login event for admin visibility.
@@ -147,7 +168,19 @@ export function createApiRouter(): Router {
         loginAt: new Date(),
         enterAt: new Date(),
         enterIp: loginIp,
+        enterLocation:
+          typeof location?.lat === 'number' && typeof location?.lng === 'number'
+            ? {
+                lat: location.lat,
+                lng: location.lng,
+                accuracy:
+                  typeof location.accuracy === 'number' && Number.isFinite(location.accuracy)
+                    ? location.accuracy
+                    : undefined
+              }
+            : null,
         exitAt: null,
+        exitLocation: null,
         sessionId: serverSession.id
       };
       void getDb().collection('login_log').insertOne(loginRecord).catch(() => {});
@@ -208,14 +241,31 @@ export function createApiRouter(): Router {
 
   router.post('/auth/logout', async (req, res) => {
     const session = await getSession(req);
+    const { location } = (req.body || {}) as {
+      location?: { lat?: number; lng?: number; accuracy?: number };
+    };
     const logoutIp =
       String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
     if (session) {
+      const exitLocation =
+        typeof location?.lat === 'number' &&
+        typeof location?.lng === 'number' &&
+        Number.isFinite(location.lat) &&
+        Number.isFinite(location.lng)
+          ? {
+              lat: location.lat,
+              lng: location.lng,
+              accuracy:
+                typeof location.accuracy === 'number' && Number.isFinite(location.accuracy)
+                  ? location.accuracy
+                  : undefined
+            }
+          : null;
       void getDb()
         .collection('login_log')
         .updateOne(
           { sessionId: session.id },
-          { $set: { exitAt: new Date(), exitIp: logoutIp } }
+          { $set: { exitAt: new Date(), exitIp: logoutIp, exitLocation } }
         )
         .catch(() => {});
     }
@@ -987,8 +1037,34 @@ export function createApiRouter(): Router {
           ip: String(d.ip || ''),
           enterAt: d.enterAt || d.loginAt,
           enterIp: String(d.enterIp || d.ip || ''),
+          enterLocation:
+            d.enterLocation &&
+            typeof d.enterLocation === 'object' &&
+            d.enterLocation != null
+              ? {
+                  lat: Number((d.enterLocation as { lat?: number }).lat),
+                  lng: Number((d.enterLocation as { lng?: number }).lng),
+                  accuracy:
+                    (d.enterLocation as { accuracy?: number }).accuracy != null
+                      ? Number((d.enterLocation as { accuracy?: number }).accuracy)
+                      : undefined
+                }
+              : null,
           exitAt: d.exitAt || null,
-          exitIp: String(d.exitIp || '')
+          exitIp: String(d.exitIp || ''),
+          exitLocation:
+            d.exitLocation &&
+            typeof d.exitLocation === 'object' &&
+            d.exitLocation != null
+              ? {
+                  lat: Number((d.exitLocation as { lat?: number }).lat),
+                  lng: Number((d.exitLocation as { lng?: number }).lng),
+                  accuracy:
+                    (d.exitLocation as { accuracy?: number }).accuracy != null
+                      ? Number((d.exitLocation as { accuracy?: number }).accuracy)
+                      : undefined
+                }
+              : null
         }))
       });
     } catch (err) {

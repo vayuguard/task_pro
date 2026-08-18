@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import type { GeoPoint } from '../api/client';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -12,11 +13,30 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const readLocation = (): Promise<GeoPoint | undefined> =>
+    new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve(undefined);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          }),
+        () => resolve(undefined),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
+      );
+    });
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await login(email, password);
+    const location = await readLocation();
+    const result = await login(email, password, location);
     setLoading(false);
     if (!result.ok) {
       setError('error' in result ? result.error : 'Login failed');

@@ -3,7 +3,7 @@ import { getCertifiedWorkingHours } from './taskService.ts';
 import { getTaskPerformance } from '../src/utils/taskTiming.ts';
 import { isTaskAssignedToUser } from '../src/utils/tasks.ts';
 
-export const SCORE_FORMULA_VERSION = 'balanced-v1';
+export const SCORE_FORMULA_VERSION = 'balanced-v2';
 
 export interface ScoreComponent {
   id: string;
@@ -99,25 +99,19 @@ export function computePerformanceScore(
   });
   const qualityScore = clip((firstPass.length / eligible) * 100, 0, 100);
 
-  // Predictability 20% — business hours vs locked estimate
+  // Predictability 20% — business hours vs estimate (both early and late variance)
   const predictScores: number[] = [];
   for (const t of mine) {
     const est = t.timeEstimated || 0;
     if (est <= 0) continue;
     const spent = getCertifiedWorkingHours(t);
-    const ratio = spent / est;
-    // Business expectation:
-    // - Finishing early should not reduce predictability.
-    // - Small late overruns (<= 5%) should not reduce predictability either.
-    // - Beyond tolerance, predictability decreases linearly.
-    const tolerance = 0.05; // 5% over estimate is "close enough"
-    let pts = 100;
-    if (ratio > 1 + tolerance) {
-      const overHours = spent - est * (1 + tolerance);
-      const overFrac = overHours / est; // 0..inf
-      const penalty = overFrac * 200; // tuned for a gradual curve
-      pts = clip(100 - penalty, 0, 100);
-    }
+    // Predictability means "close to estimate", whether early or late.
+    // Keep a small tolerance band, then penalize absolute variance.
+    const tolerance = 0.05; // 5% within estimate is considered on-target
+    const varianceFrac = Math.abs(spent - est) / est;
+    const excess = Math.max(0, varianceFrac - tolerance);
+    const penalty = excess * 200; // 10% miss => 90, 20% miss => 70
+    const pts = clip(100 - penalty, 0, 100);
     predictScores.push(pts);
   }
   const predictScore =

@@ -2,6 +2,7 @@ import { Task, EmployeeMetrics, ProgressLog, ProjectHealth, User, TaskStatus } f
 import { AuthSession } from '../auth/auth';
 
 const API = '/api';
+export type GeoPoint = { lat: number; lng: number; accuracy?: number };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -51,11 +52,12 @@ export async function apiHealth(): Promise<{ ok: boolean; database: string }> {
 
 export async function apiLogin(
   email: string,
-  password: string
+  password: string,
+  location?: GeoPoint
 ): Promise<{ ok: true; session: AuthSession; mfaRequired: boolean }> {
   return request('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password, location })
   });
 }
 
@@ -69,8 +71,8 @@ export async function apiVerifyMfa(
   });
 }
 
-export async function apiLogout(): Promise<{ ok: true }> {
-  return request('/auth/logout', { method: 'POST' });
+export async function apiLogout(location?: GeoPoint): Promise<{ ok: true }> {
+  return request('/auth/logout', { method: 'POST', body: JSON.stringify({ location }) });
 }
 
 export async function apiChangePassword(
@@ -212,8 +214,10 @@ export async function apiGetLoginLog(limit = 50): Promise<{
     ip: string;
     enterAt: string;
     enterIp: string;
+    enterLocation: GeoPoint | null;
     exitAt: string | null;
     exitIp: string;
+    exitLocation: GeoPoint | null;
   }>;
 }> {
   return request(`/login-log?limit=${limit}`);

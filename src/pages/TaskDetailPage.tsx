@@ -73,7 +73,6 @@ export default function TaskDetailPage() {
         onAction={() => (error ? void reload() : window.history.back())}
       />
     );
-  const locked = Boolean(task.estimateLockedAt);
   const estimateValue = estimateDraft ?? task.timeEstimated;
   const estimateChanged = estimateDraft != null && estimateDraft !== task.timeEstimated;
   const currentDueInput =
@@ -378,7 +377,7 @@ export default function TaskDetailPage() {
                     </div>
                   </div>
                 )}
-                {isAdmin && !locked ? (
+                {isAdmin ? (
                   <div className="space-y-2">
                     <div className="grid sm:grid-cols-2 gap-3">
                       <Input
@@ -417,7 +416,7 @@ export default function TaskDetailPage() {
                     )}
                   </div>
                 ) : (
-                  <p className="text-lg font-bold">{task.timeEstimated}h {locked && <span className="text-xs font-normal text-ink-faint">locked</span>}</p>
+                  <p className="text-lg font-bold">{task.timeEstimated}h</p>
                 )}
               </div>
               <div>
