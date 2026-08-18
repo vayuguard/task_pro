@@ -14,6 +14,10 @@ export interface ServerSession {
   mfaVerified: boolean;
   createdAt: Date;
   expiresAt: Date;
+  loginIp?: string;
+  loginCity?: string;
+  loginRegion?: string;
+  loginCountry?: string;
 }
 
 function parseCookies(header: string | undefined): Record<string, string> {
@@ -49,6 +53,18 @@ export async function createSession(
     `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`
   );
   return session;
+}
+
+/** Attach IP / geo to session after creation (non-blocking). */
+export async function patchSessionGeo(
+  sessionId: string,
+  ip: string,
+  geo: { city?: string; region?: string; country?: string } = {}
+): Promise<void> {
+  await getDb().collection('sessions').updateOne(
+    { id: sessionId },
+    { $set: { loginIp: ip, loginCity: geo.city, loginRegion: geo.region, loginCountry: geo.country } }
+  );
 }
 
 export async function destroySession(req: Request, res: Response): Promise<void> {

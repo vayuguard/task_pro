@@ -1,5 +1,5 @@
-import { useParams, Link } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useData } from '../context/DataContext';
 import { PageHeader } from '../components/ui/Panel';
@@ -11,53 +11,96 @@ import { Input } from '../components/ui/Input';
 import { TaskStatus, Subtask } from '../types';
 import { canAssignToOthers } from '../auth/auth';
 import { getTaskHours, getTaskWallHours } from '../utils/taskDisplay';
-import { formatDayLabelIST, formatTimeIST, nowTimestamp } from '../utils/time';
+import { dueDateFromInput, dueDateToInput, formatDayLabelIST, formatTimeIST, nowTimestamp } from '../utils/time';
 import { sectionBreakdown, getWorkingHours } from '../utils/taskTiming';
 import { Tabs } from '../components/ui/Tabs';
 import { useLiveTick } from '../hooks/useLiveTick';
 import { isWithinBusinessHours, nextBusinessStart } from '../utils/businessTime';
+import { isWorkTimerRunning } from '../utils/taskTiming';
 
 const statuses: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
-  const { visibleTasks, teamMembers, loading, updateTask, transitionTask } = useData();
+  const { visibleTasks, teamMembers, loading, error, reload, updateTask, transitionTask, pauseTimer, resumeTimer, reviewTask, archiveTask, holidayDates } = useData();
   const task = visibleTasks.find((t) => t.id === id);
+  const navigate = useNavigate();
   const [comment, setComment] = useState('');
   const [estimateDraft, setEstimateDraft] = useState<number | null>(null);
   const [estimateReason, setEstimateReason] = useState('');
+  const [estimateUnit, setEstimateUnit] = useState<'hours' | 'minutes' | 'days'>('hours');
+  const [dueInput, setDueInput] = useState<string>('');
   const [newSubtask, setNewSubtask] = useState('');
   const isAdmin = session?.role === 'admin';
   const [tab, setTab] = useState<'details' | 'subtasks' | 'activity' | 'attachments'>('details');
 
-  const liveEnabled = task?.status === 'In Progress';
+  const liveEnabled = Boolean(task && isWorkTimerRunning(task));
   const liveNow = useLiveTick(1000, liveEnabled);
   const liveWorkHours = useMemo(() => {
-    if (!task || !liveEnabled) return null;
-    return getWorkingHours(task, new Date(liveNow));
-  }, [liveEnabled, liveNow, task]);
+    if (!task || task.status !== 'In Progress') return null;
+    return getWorkingHours(task, new Date(liveNow), holidayDates);
+  }, [liveNow, task, holidayDates]);
   const timerState = useMemo(() => {
-    if (!liveEnabled) return null;
+    if (!task || task.status !== 'In Progress') return null;
+    if (task.timerPaused) return { running: false, label: 'Paused by you' };
     const now = new Date(liveNow);
     if (isWithinBusinessHours(now)) return { running: true, label: 'Running now' };
     const next = nextBusinessStart(now);
     return {
       running: false,
-      label: `Paused · resumes ${formatDayLabelIST(next.getTime(), liveNow)} at ${formatTimeIST(next)} IST`
+      label: `Office hours pause · resumes ${formatDayLabelIST(next.getTime(), liveNow)} at ${formatTimeIST(next)} IST`
     };
-  }, [liveEnabled, liveNow]);
+  }, [liveNow, task]);
+
+  const sections = useMemo(() => {
+    if (!task) return [];
+    return sectionBreakdown(task, new Date(liveEnabled ? liveNow : Date.now()), holidayDates);
+  }, [task, liveEnabled, liveNow, holidayDates]);
+
+  useEffect(() => {
+    if (!loading && !task && !error) {
+      void reload();
+    }
+  }, [loading, task, error, reload]);
 
   if (loading) return <PageLoading />;
-  if (!task) return <EmptyState title="Task not found" actionLabel="Back to tasks" onAction={() => window.history.back()} />;
-
-  const sections = useMemo(
-    () => sectionBreakdown(task, new Date(liveEnabled ? liveNow : Date.now())),
-    [task, liveEnabled, liveNow]
-  );
+  if (!task)
+    return (
+      <EmptyState
+        title={error ? 'Could not load task' : 'Task not found'}
+        actionLabel={error ? 'Retry' : 'Back to tasks'}
+        onAction={() => (error ? void reload() : window.history.back())}
+      />
+    );
   const locked = Boolean(task.estimateLockedAt);
   const estimateValue = estimateDraft ?? task.timeEstimated;
   const estimateChanged = estimateDraft != null && estimateDraft !== task.timeEstimated;
+  const currentDueInput =
+    task.dueDate && task.dueDate !== 'No due date' ? dueDateToInput(task.dueDate) : '';
+  const dueChanged = isAdmin && dueInput !== currentDueInput;
+
+  const unitToHours = (value: number, unit: typeof estimateUnit) => {
+    if (!Number.isFinite(value)) return 0;
+    if (unit === 'hours') return value;
+    if (unit === 'minutes') return value / 60;
+    return value * 8; // default 8 business hours per day
+  };
+
+  const hoursToUnit = (hours: number, unit: typeof estimateUnit) => {
+    if (!Number.isFinite(hours)) return 0;
+    if (unit === 'hours') return hours;
+    if (unit === 'minutes') return hours * 60;
+    return hours / 8;
+  };
+
+  // Keep due date picker synced when navigating between tasks.
+  useEffect(() => {
+    if (!task) return;
+    const nextDue = task.dueDate && task.dueDate !== 'No due date' ? dueDateToInput(task.dueDate) : '';
+    setDueInput(nextDue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
 
   const changeStatus = async (status: TaskStatus) => {
     if (status === task.status) return;
@@ -88,6 +131,15 @@ export default function TaskDetailPage() {
     await updateTask({ ...task, timeEstimated: estimateValue }, { estimateReason: estimateReason.trim() });
     setEstimateDraft(null);
     setEstimateReason('');
+  };
+
+  const saveDueDate = async () => {
+    if (!isAdmin) return;
+    if (!dueChanged) return;
+    await updateTask({
+      ...task,
+      dueDate: dueInput ? dueDateFromInput(dueInput) : 'No due date'
+    });
   };
 
   const toggleSubtask = async (sub: Subtask) => {
@@ -262,6 +314,29 @@ export default function TaskDetailPage() {
                 ))}
               </select>
             </div>
+            {task.status === 'In Progress' && (
+              <div className="flex gap-2">
+                {task.timerPaused ? (
+                  <Button type="button" variant="secondary" icon="play_arrow" onClick={() => resumeTimer(task.id)}>
+                    Resume timer
+                  </Button>
+                ) : (
+                  <Button type="button" variant="secondary" icon="pause" onClick={() => pauseTimer(task.id)}>
+                    Pause timer
+                  </Button>
+                )}
+              </div>
+            )}
+            {task.status === 'Review' && (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" icon="check" onClick={() => reviewTask(task.id, 'accepted')}>
+                  Accept
+                </Button>
+                <Button type="button" variant="secondary" icon="undo" onClick={() => reviewTask(task.id, 'changes_requested')}>
+                  Request changes
+                </Button>
+              </div>
+            )}
             {isAdmin && canAssignToOthers(session!.role) && (
               <div>
                 <label className="label">Assignee</label>
@@ -282,15 +357,51 @@ export default function TaskDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="label">Planned</p>
+                {isAdmin && (
+                  <div className="space-y-2 mb-3">
+                    <Input
+                      label="Due date"
+                      type="date"
+                      value={dueInput}
+                      onChange={(e) => setDueInput(e.target.value)}
+                    />
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={!dueChanged}
+                        onClick={() => void saveDueDate()}
+                      >
+                        Save due date
+                      </Button>
+                      <span className="text-xs text-ink-faint">Blank = “No due date”.</span>
+                    </div>
+                  </div>
+                )}
                 {isAdmin && !locked ? (
                   <div className="space-y-2">
-                    <Input
-                      type="number"
-                      min={0.5}
-                      step={0.5}
-                      value={estimateValue}
-                      onChange={(e) => setEstimateDraft(parseFloat(e.target.value))}
-                    />
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Estimate amount"
+                        type="number"
+                        step={estimateUnit === 'minutes' ? 15 : estimateUnit === 'days' ? 0.25 : 0.5}
+                        min={estimateUnit === 'minutes' ? 15 : estimateUnit === 'days' ? 0.25 : 0.5}
+                        value={hoursToUnit(estimateValue, estimateUnit)}
+                        onChange={(e) => {
+                          const raw = parseFloat(e.target.value);
+                          if (Number.isNaN(raw)) return setEstimateDraft(null);
+                          setEstimateDraft(unitToHours(raw, estimateUnit));
+                        }}
+                      />
+                      <div className="space-y-1">
+                        <label className="label">Unit</label>
+                        <select className="input" value={estimateUnit} onChange={(e) => setEstimateUnit(e.target.value as typeof estimateUnit)}>
+                          <option value="hours">Hours</option>
+                          <option value="minutes">Minutes</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
+                    </div>
                     {estimateChanged && (
                       <>
                         <Input
@@ -330,6 +441,24 @@ export default function TaskDetailPage() {
               </div>
             ))}
           </div>
+          {isAdmin && (
+            <div className="panel p-4">
+              <h3 className="text-sm font-semibold mb-2">Archive</h3>
+              <p className="text-xs text-ink-muted mb-3">Hides this task from boards. Hours stay on the timesheet.</p>
+              <Button
+                type="button"
+                variant="danger"
+                icon="archive"
+                onClick={async () => {
+                  if (!window.confirm('Archive this task?')) return;
+                  await archiveTask(task.id);
+                  navigate('/tasks');
+                }}
+              >
+                Archive task
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

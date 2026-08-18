@@ -16,20 +16,22 @@ import { PageLoading } from '../components/ui/Skeleton';
 import { PriorityBadge } from '../components/ui/Badge';
 import { Task, TaskStatus } from '../types';
 import { getTaskHours } from '../utils/taskDisplay';
-import { getWorkingHours } from '../utils/taskTiming';
+import { getWorkingHours, isWorkTimerRunning } from '../utils/taskTiming';
 import { useLiveTick } from '../hooks/useLiveTick';
 import { isWithinBusinessHours } from '../utils/businessTime';
 
 const columns: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
 
 function TaskCard({ task, dragging }: { task: Task; dragging?: boolean }) {
-  const liveEnabled = task.status === 'In Progress';
+  const { holidayDates } = useData();
+  const liveEnabled = isWorkTimerRunning(task);
   const liveNow = useLiveTick(1000, liveEnabled);
   const liveHours = useMemo(() => {
-    if (!liveEnabled) return null;
-    return getWorkingHours(task, new Date(liveNow));
-  }, [liveEnabled, liveNow, task]);
-  const clockRunning = liveEnabled && isWithinBusinessHours(new Date(liveNow));
+    if (task.status !== 'In Progress') return null;
+    return getWorkingHours(task, new Date(liveNow), holidayDates);
+  }, [holidayDates, liveNow, task]);
+  const clockRunning = isWorkTimerRunning(task) && isWithinBusinessHours(new Date(liveNow));
+  const pausedByUser = task.status === 'In Progress' && task.timerPaused;
 
   return (
     <div className={`panel p-3 ${dragging ? 'opacity-90 shadow-lg ring-2 ring-accent' : ''}`}>
@@ -41,7 +43,7 @@ function TaskCard({ task, dragging }: { task: Task; dragging?: boolean }) {
           {(liveHours ?? getTaskHours(task)).toFixed(1)}h
           {task.status === 'In Progress' && (
             <span className={`ml-1 ${clockRunning ? 'text-accent' : 'text-ink-faint'}`}>
-              {clockRunning ? 'live' : 'paused'}
+              {clockRunning ? 'live' : pausedByUser ? 'paused' : 'after hours'}
             </span>
           )}
         </span>
@@ -135,7 +137,7 @@ export default function BoardPage() {
     <div>
       <PageHeader
         title="Board"
-        subtitle="Drag tasks between columns · timer runs in In Progress · pauses 6 PM–10 AM IST"
+        subtitle="Drag tasks between columns · timer runs in In Progress · pause without leaving the column · office hours 10:00–18:00 IST"
       />
       <DndContext
         sensors={sensors}

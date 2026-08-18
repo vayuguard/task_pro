@@ -81,6 +81,10 @@ export interface Task {
   reviewOutcome?: 'accepted' | 'changes_requested';
   /** Display only — office / wfh / hybrid */
   workMode?: 'office' | 'wfh' | 'hybrid';
+  /** In Progress but clock closed until resume */
+  timerPaused?: boolean;
+  /** Soft-delete timestamp (ISO). Hidden from boards when set. */
+  archivedAt?: string;
   subtasks: Subtask[];
   attachments: Attachment[];
   activity: Activity[];
@@ -123,4 +127,10 @@ export interface ProjectHealth {
   health: number;
   velocity: number;
   riskLevel: 'low' | 'medium' | 'high';
+}
+
+export interface Holiday {
+  id: string;
+  date: string;
+  name: string;
 }

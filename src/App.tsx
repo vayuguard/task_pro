@@ -15,6 +15,8 @@ import TaskDetailPage from './pages/TaskDetailPage';
 import PerformancePage from './pages/PerformancePage';
 import ChatPage from './pages/ChatPage';
 import SettingsPage from './pages/SettingsPage';
+import TimesheetPage from './pages/TimesheetPage';
+import ActivityPage from './pages/ActivityPage';
 
 function AppRoutes() {
   return (
@@ -33,6 +35,8 @@ function AppRoutes() {
           <Route path="/board" element={<BoardPage />} />
           <Route path="/performance" element={<PerformancePage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/timesheet" element={<TimesheetPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>

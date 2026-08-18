@@ -1,6 +1,15 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { Task, User, ProjectHealth } from '../types';
-import { apiBootstrap, apiCreateTask, apiUpdateTask, apiTransitionTask } from '../api/client';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Holiday, Task, User, ProjectHealth } from '../types';
+import {
+  apiBootstrap,
+  apiCreateTask,
+  apiUpdateTask,
+  apiTransitionTask,
+  apiPauseTimer,
+  apiResumeTimer,
+  apiReviewTask,
+  apiArchiveTask
+} from '../api/client';
 import { normalizeTasks } from '../utils/tasks';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from './ToastContext';
@@ -11,11 +20,17 @@ interface DataContextValue {
   tasks: Task[];
   teamMembers: User[];
   projectsHealth: ProjectHealth[];
+  holidays: Holiday[];
+  holidayDates: Set<string>;
   loading: boolean;
   error: string;
   reload: () => Promise<void>;
   updateTask: (task: Task, meta?: { estimateReason?: string }) => Promise<Task>;
   transitionTask: (taskId: string, status: TaskStatus, version?: number) => Promise<Task>;
+  pauseTimer: (taskId: string) => Promise<Task>;
+  resumeTimer: (taskId: string) => Promise<Task>;
+  reviewTask: (taskId: string, outcome: 'accepted' | 'changes_requested') => Promise<Task>;
+  archiveTask: (taskId: string) => Promise<void>;
   addTask: (task: Task) => Promise<Task>;
   visibleTasks: Task[];
 }
@@ -23,11 +38,12 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const { session, isLoggedIn } = useAuth();
+  const { session, isLoggedIn, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [projectsHealth, setProjectsHealth] = useState<ProjectHealth[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -37,9 +53,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setError('');
     try {
       const data = await apiBootstrap();
-      setTasks(normalizeTasks(data.tasks));
+      setTasks(normalizeTasks(data.tasks).filter((t) => !t.archivedAt));
       setTeamMembers(data.teamMembers || []);
       setProjectsHealth(data.projectsHealth || []);
+      setHolidays(data.holidays || []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load data';
       setError(msg);
@@ -50,36 +67,133 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [isLoggedIn, toast]);
 
   useEffect(() => {
-    if (isLoggedIn) void reload();
-    else {
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isLoggedIn) {
+      void reload();
+    } else {
       setTasks([]);
+      setTeamMembers([]);
+      setProjectsHealth([]);
+      setHolidays([]);
       setLoading(false);
     }
-  }, [isLoggedIn, session?.userId, reload]);
+  }, [authLoading, isLoggedIn, session?.userId, reload]);
+
+  useEffect(() => {
+    if (!isLoggedIn || authLoading) return;
+
+    const pollId = window.setInterval(() => {
+      void reload();
+    }, 30_000);
+
+    const onFocus = () => {
+      void reload();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void reload();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      window.clearInterval(pollId);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [authLoading, isLoggedIn, reload]);
+
+  const replaceTask = useCallback((task: Task) => {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+  }, []);
 
   const updateTask = useCallback(
     async (task: Task, meta?: { estimateReason?: string }) => {
       try {
         const res = await apiUpdateTask(task, meta);
-        setTasks((prev) => prev.map((t) => (t.id === res.task.id ? res.task : t)));
+        replaceTask(res.task);
         return res.task;
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Save failed', 'error');
         throw err;
       }
     },
-    [toast]
+    [replaceTask, toast]
   );
 
   const transitionTask = useCallback(
     async (taskId: string, status: TaskStatus, version?: number) => {
       try {
         const res = await apiTransitionTask(taskId, status, version);
-        setTasks((prev) => prev.map((t) => (t.id === res.task.id ? res.task : t)));
+        replaceTask(res.task);
         if (res.task.status === 'Done') celebrate(44);
         return res.task;
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Status update failed', 'error');
+        throw err;
+      }
+    },
+    [replaceTask, toast]
+  );
+
+  const pauseTimer = useCallback(
+    async (taskId: string) => {
+      try {
+        const res = await apiPauseTimer(taskId);
+        replaceTask(res.task);
+        toast('Timer paused', 'success');
+        return res.task;
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Pause failed', 'error');
+        throw err;
+      }
+    },
+    [replaceTask, toast]
+  );
+
+  const resumeTimer = useCallback(
+    async (taskId: string) => {
+      try {
+        const res = await apiResumeTimer(taskId);
+        replaceTask(res.task);
+        toast('Timer resumed', 'success');
+        return res.task;
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Resume failed', 'error');
+        throw err;
+      }
+    },
+    [replaceTask, toast]
+  );
+
+  const reviewTask = useCallback(
+    async (taskId: string, outcome: 'accepted' | 'changes_requested') => {
+      try {
+        const res = await apiReviewTask(taskId, outcome);
+        replaceTask(res.task);
+        if (res.task.status === 'Done') celebrate(44);
+        toast(outcome === 'accepted' ? 'Review accepted' : 'Changes requested', 'success');
+        return res.task;
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Review failed', 'error');
+        throw err;
+      }
+    },
+    [replaceTask, toast]
+  );
+
+  const archiveTask = useCallback(
+    async (taskId: string) => {
+      try {
+        await apiArchiveTask(taskId);
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        toast('Task archived', 'success');
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Archive failed', 'error');
         throw err;
       }
     },
@@ -102,13 +216,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const isAdmin = session?.role === 'admin';
-  const visibleTasks = isAdmin
-    ? tasks
-    : tasks.filter(
-        (t) =>
-          t.assignee.email?.toLowerCase() === session?.email.toLowerCase() ||
-          t.assignee.name === session?.profile.name
-      );
+  const visibleTasks = useMemo(() => {
+    const active = tasks.filter((t) => !t.archivedAt);
+    if (isAdmin) return active;
+    return active.filter(
+      (t) =>
+        t.assignee.email?.toLowerCase() === session?.email.toLowerCase() ||
+        t.assignee.name === session?.profile.name
+    );
+  }, [isAdmin, session?.email, session?.profile.name, tasks]);
+
+  const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
 
   return (
     <DataContext.Provider
@@ -116,11 +234,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         tasks,
         teamMembers,
         projectsHealth,
+        holidays,
+        holidayDates,
         loading,
         error,
         reload,
         updateTask,
         transitionTask,
+        pauseTimer,
+        resumeTimer,
+        reviewTask,
+        archiveTask,
         addTask,
         visibleTasks
       }}

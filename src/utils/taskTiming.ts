@@ -53,21 +53,22 @@ export function getSectionHours(task: Task, status: TaskStatus, now: Date = new 
  * Open segments stop accruing at 18:00 IST and resume at 10:00 IST on the
  * next work day. Closed segments retain their certified server duration.
  */
-export function getWorkingHours(task: Task, now: Date = new Date()): number {
-  return msToHours(getWorkingMs(task, now));
+export function getWorkingHours(task: Task, now: Date = new Date(), holidays?: Set<string>): number {
+  return msToHours(getWorkingMs(task, now, holidays));
 }
 
-export function getWorkingMs(task: Task, now: Date = new Date()): number {
+export function getWorkingMs(task: Task, now: Date = new Date(), holidays?: Set<string>): number {
   return (task.statusHistory || [])
     .filter((segment) => segment.status === 'In Progress')
     .reduce((sum, segment) => {
       if (segment.endedAt && segment.businessDurationMs != null) {
         return sum + Math.max(0, segment.businessDurationMs);
       }
+      if (task.timerPaused && !segment.endedAt) return sum;
       const start = new Date(segment.startedAt);
       const end = segment.endedAt ? new Date(segment.endedAt) : now;
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return sum;
-      return sum + businessMsBetween(start, end);
+      return sum + businessMsBetween(start, end, undefined, holidays);
     }, 0);
 }
 
@@ -77,7 +78,7 @@ export function getWallWorkingHours(task: Task, now: Date = new Date()): number 
 }
 
 export function isWorkTimerRunning(task: Task): boolean {
-  return task.status === 'In Progress';
+  return task.status === 'In Progress' && !task.timerPaused;
 }
 
 export type TaskPerformance = {
@@ -263,16 +264,16 @@ export function transitionTaskStatus(
   return {
     ...nextTask,
     timeLogged,
+    timerPaused: false,
     completedAt: nextStatus === 'Done' ? at.toISOString() : undefined,
     activity: [log, ...ensured.activity]
   };
 }
 
-export function sectionBreakdown(task: Task, now: Date = new Date()) {
+export function sectionBreakdown(task: Task, now: Date = new Date(), holidays?: Set<string>) {
   const statuses: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
   return statuses.map((status) => {
-    // In Progress is credited in office hours; other columns stay wall-clock dwell.
-    const ms = status === 'In Progress' ? getWorkingMs(task, now) : getSectionMs(task, status, now);
+    const ms = status === 'In Progress' ? getWorkingMs(task, now, holidays) : getSectionMs(task, status, now);
     return {
       status,
       label: STATUS_BOARD_LABEL[status],

@@ -11,6 +11,7 @@ import { businessMsBetween } from '../server/businessTime.ts';
 import { hashPassword, verifyPassword } from '../server/auth/password.ts';
 import { computePerformanceScore } from '../server/scoring.ts';
 import { scheduleForEmail } from '../server/scheduleExceptions.ts';
+import { pauseWorkTimer, resumeWorkTimer } from '../server/taskService.ts';
 import { Task } from '../src/types.ts';
 
 let passed = 0;
@@ -233,6 +234,32 @@ const customSchedule = scheduleForEmail('jane@company.com', [
   { email: 'jane@company.com', startHour: 9, endHour: 17 }
 ]);
 assert(customSchedule.startHour === 9 && customSchedule.endHour === 17, 'schedule exception applies custom hours');
+
+const holidayZero = getWorkingHours(
+  officeRunning,
+  new Date('2026-08-05T12:30:00.000Z'),
+  new Set(['2026-08-05'])
+);
+assert(holidayZero === 0, 'holiday date credits zero In Progress hours');
+
+const manuallyPaused = pauseWorkTimer(
+  officeRunning,
+  timingUser,
+  new Date('2026-08-05T12:00:00.000Z')
+);
+assert(manuallyPaused.timerPaused === true, 'pause keeps task In Progress and sets timerPaused');
+assert(
+  getWorkingHours(manuallyPaused, new Date('2026-08-05T14:00:00.000Z')) ===
+    getWorkingHours(manuallyPaused, new Date('2026-08-05T12:00:00.000Z')),
+  'paused timer does not accrue further hours'
+);
+const manuallyResumed = resumeWorkTimer(
+  manuallyPaused,
+  timingUser,
+  new Date('2026-08-05T12:05:00.000Z')
+);
+assert(manuallyResumed.timerPaused === false, 'resume clears timerPaused');
+assert((manuallyResumed.statusHistory || []).some((s) => s.status === 'In Progress' && !s.endedAt), 'resume opens a new In Progress segment');
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);

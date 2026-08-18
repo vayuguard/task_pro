@@ -20,21 +20,35 @@ export interface AuthSession {
 
 const SESSION_KEY = 'taskpro_session';
 
-/** Demo MFA code for admin accounts */
-export const DEMO_MFA_CODE = '202208';
+function envString(name: string, fallback: string): string {
+  try {
+    const value = typeof process !== 'undefined' ? process.env?.[name] : undefined;
+    const trimmed = String(value || '').trim();
+    return trimmed || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const DEFAULT_ADMIN_EMAIL = 'reachus@vayuguard.com';
+const DEFAULT_ADMIN_PASSWORD = 'vgctpl_ad@2022';
+const DEFAULT_ADMIN_MFA = '202208';
+
+/** Admin MFA — override with ADMIN_MFA_CODE in .env */
+export const DEMO_MFA_CODE = envString('ADMIN_MFA_CODE', DEFAULT_ADMIN_MFA);
 
 /** Only admin is seeded. Employees are created by admin and notified by email. */
 export const ADMIN_SEED: AuthAccount = {
   id: 'admin-1',
-  email: 'reachus@vayuguard.com',
-  password: 'vgctpl_ad@2022',
+  email: envString('ADMIN_EMAIL', DEFAULT_ADMIN_EMAIL).toLowerCase(),
+  password: envString('ADMIN_PASSWORD', DEFAULT_ADMIN_PASSWORD),
   role: 'admin',
   mfaRequired: true,
   profile: {
-    name: 'Vayuguard Admin',
-    email: 'reachus@vayuguard.com',
+    name: envString('ADMIN_NAME', 'Vayuguard Admin'),
+    email: envString('ADMIN_EMAIL', DEFAULT_ADMIN_EMAIL).toLowerCase(),
     role: 'Admin',
-    avatar: 'https://ui-avatars.com/api/?name=Vayuguard+Admin&background=6366f1&color=fff'
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(envString('ADMIN_NAME', 'Vayuguard Admin'))}&background=6366f1&color=fff`
   }
 };
 

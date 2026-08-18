@@ -1,5 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
-import { getSession, touchSession, type ServerSession } from '../auth/session.ts';
+import { getSession, destroySession, touchSession, type ServerSession } from '../auth/session.ts';
+import { getDb } from '../db.ts';
+import { getIstHour } from '../istTime.ts';
 
 export type AuthedRequest = Request & { session?: ServerSession };
 
@@ -12,6 +14,22 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   if (!session.mfaVerified && session.role === 'admin') {
     res.status(401).json({ ok: false, error: 'MFA verification required.' });
     return;
+  }
+  // Employees are auto-logged-out at 18:00 IST (6 PM).
+  if (session.role === 'employee') {
+    const { hour } = getIstHour();
+    if (hour >= 18) {
+      const loginIp =
+        String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+      // Mark office exit time for admin monitoring.
+      void getDb().collection('login_log').updateOne(
+        { sessionId: session.id },
+        { $set: { exitAt: new Date(), exitIp: loginIp } }
+      );
+      await destroySession(req, res);
+      res.status(401).json({ ok: false, error: 'Work hours ended at 6:00 PM IST. You have been logged out.' });
+      return;
+    }
   }
   req.session = session;
   touchSession(session.id).catch(() => {});

@@ -8,13 +8,16 @@ import { CommandPalette } from '../CommandPalette';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { CreateTaskModal } from '../../features/tasks/CreateTaskModal';
+import { apiGetNotifications } from '../../api/client';
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: 'dashboard' },
   { to: '/tasks', label: 'My tasks', icon: 'checklist' },
   { to: '/board', label: 'Board', icon: 'view_kanban' },
+  { to: '/timesheet', label: 'Timesheet', icon: 'schedule' },
   { to: '/performance', label: 'Performance', icon: 'monitoring' },
   { to: '/chat', label: 'Chat', icon: 'forum' },
+  { to: '/activity', label: 'Activity', icon: 'history', admin: true },
   { to: '/settings', label: 'Settings', icon: 'settings' }
 ];
 
@@ -29,6 +32,8 @@ export function AppLayout() {
   const reducedMotion = useReducedMotion();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notes, setNotes] = useState<Array<{ id: string; tone: string; title: string; body: string; href: string }>>([]);
   const { resolved, toggle } = useTheme();
   const {
     paletteOpen,
@@ -53,6 +58,24 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setPaletteOpen]);
 
+  // Auto-logout employees at 6:00 PM IST.
+  useEffect(() => {
+    if (session?.role !== 'employee') return;
+    const check = () => {
+      const istHour = Number(
+        new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false })
+          .formatToParts(new Date())
+          .find((p) => p.type === 'hour')?.value ?? '0'
+      );
+      if (istHour >= 18) {
+        logout();
+        window.alert('Work hours ended at 6:00 PM IST. You have been logged out.');
+      }
+    };
+    const id = window.setInterval(check, 30_000);
+    return () => window.clearInterval(id);
+  }, [session?.role, logout]);
+
   // Routing does not reset scroll, so a deep-scrolled list would open the next
   // page already scrolled past its content.
   useEffect(() => {
@@ -60,13 +83,30 @@ export function AppLayout() {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      apiGetNotifications()
+        .then((r) => {
+          if (!cancelled) setNotes(r.items);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [session?.userId]);
+
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = search.trim();
     navigate(q ? `/tasks?q=${encodeURIComponent(q)}` : '/tasks');
   };
 
-  const links = nav;
+  const links = nav.filter((item) => !('admin' in item && item.admin) || session?.role === 'admin');
   const sidebarWidthClass = sidebarCollapsed ? 'w-[5.5rem]' : 'w-64';
 
   return (
@@ -162,6 +202,44 @@ export function AppLayout() {
                 icon="search"
                 onClick={() => setPaletteOpen(true)}
               />
+            </Tooltip>
+            <Tooltip label="Notifications" side="bottom">
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  icon="notifications"
+                  onClick={() => setNotifyOpen((v) => !v)}
+                  aria-expanded={notifyOpen}
+                  aria-label="Notifications"
+                />
+                {notes.length > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[1rem] h-4 px-1 rounded-full bg-danger text-white text-[10px] leading-4 text-center">
+                    {notes.length > 9 ? '9+' : notes.length}
+                  </span>
+                )}
+                {notifyOpen && (
+                  <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto custom-scrollbar panel p-2 z-50 shadow-lg">
+                    {notes.length === 0 ? (
+                      <p className="text-xs text-ink-faint p-3">No alerts right now.</p>
+                    ) : (
+                      notes.map((n) => (
+                        <button
+                          key={n.id}
+                          type="button"
+                          className="w-full text-left p-2 rounded-lg hover:bg-surface-sunken"
+                          onClick={() => {
+                            setNotifyOpen(false);
+                            navigate(n.href);
+                          }}
+                        >
+                          <p className="text-xs font-semibold text-ink">{n.title}</p>
+                          <p className="text-xs text-ink-muted truncate">{n.body}</p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </Tooltip>
             <Tooltip label="New task" side="bottom">
               <Button variant="primary" size="sm" icon="add" onClick={openCreateTask}>

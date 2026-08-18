@@ -87,6 +87,8 @@ export function computePerformanceScore(
 
   // Quality 30% — first-pass (no rework: never returned to In Progress after Review)
   const firstPass = mine.filter((t) => {
+    if (t.reviewOutcome === 'changes_requested') return false;
+    if (t.reviewOutcome === 'accepted') return true;
     const hist = t.statusHistory || [];
     let sawReview = false;
     for (const s of hist) {
@@ -104,7 +106,18 @@ export function computePerformanceScore(
     if (est <= 0) continue;
     const spent = getCertifiedWorkingHours(t);
     const ratio = spent / est;
-    const pts = clip(100 - Math.abs(1 - ratio) * 100, 0, 100);
+    // Business expectation:
+    // - Finishing early should not reduce predictability.
+    // - Small late overruns (<= 5%) should not reduce predictability either.
+    // - Beyond tolerance, predictability decreases linearly.
+    const tolerance = 0.05; // 5% over estimate is "close enough"
+    let pts = 100;
+    if (ratio > 1 + tolerance) {
+      const overHours = spent - est * (1 + tolerance);
+      const overFrac = overHours / est; // 0..inf
+      const penalty = overFrac * 200; // tuned for a gradual curve
+      pts = clip(100 - penalty, 0, 100);
+    }
     predictScores.push(pts);
   }
   const predictScore =

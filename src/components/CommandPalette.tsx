@@ -46,6 +46,10 @@ export function CommandPalette({
       { id: 'nav-board', label: 'Go to Board', icon: 'view_kanban', group: 'Navigation', run: go('/board') },
       { id: 'nav-perf', label: 'Go to Performance', icon: 'monitoring', group: 'Navigation', run: go('/performance') },
       { id: 'nav-chat', label: 'Go to Chat', icon: 'forum', group: 'Navigation', run: go('/chat') },
+      { id: 'nav-timesheet', label: 'Go to Timesheet', icon: 'schedule', group: 'Navigation', run: go('/timesheet') },
+      ...(session?.role === 'admin'
+        ? [{ id: 'nav-activity', label: 'Go to Activity', icon: 'history', group: 'Navigation' as const, run: go('/activity') }]
+        : []),
       { id: 'nav-settings', label: 'Go to Settings', icon: 'settings', group: 'Navigation', run: go('/settings') },
       {
         id: 'act-new',
@@ -94,7 +98,7 @@ export function CommandPalette({
     }));
 
     return [...base, ...taskCommands];
-  }, [navigate, onClose, onNewTask, visibleTasks, logout, toggle, resolved]);
+  }, [navigate, onClose, onNewTask, visibleTasks, logout, toggle, resolved, session?.role]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

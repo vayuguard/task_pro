@@ -30,12 +30,13 @@ function segmentWallMs(segment: StatusTimeSegment, now: Date): number {
 function segmentBusinessMs(
   segment: StatusTimeSegment,
   now: Date,
-  schedule: WorkSchedule = DEFAULT_SCHEDULE
+  schedule: WorkSchedule = DEFAULT_SCHEDULE,
+  holidays: Set<string> = new Set()
 ): number {
   const end = segment.endedAt ? new Date(segment.endedAt) : now;
   const start = new Date(segment.startedAt);
   if (segment.status !== 'In Progress') return 0;
-  return businessMsBetween(start, end, schedule);
+  return businessMsBetween(start, end, schedule, holidays);
 }
 
 function resolveSegmentSchedule(
@@ -49,20 +50,22 @@ function resolveSegmentSchedule(
 export function getCertifiedWorkingHours(
   task: Task,
   now: Date = new Date(),
-  exceptions: ScheduleExceptionDoc[] = []
+  exceptions: ScheduleExceptionDoc[] = [],
+  holidays: Set<string> = new Set()
 ): number {
   const history = task.statusHistory || [];
   const ms = history
     .filter((s) => s.status === 'In Progress')
     .reduce((sum, s) => {
       const schedule = resolveSegmentSchedule(s, exceptions);
+      if (task.timerPaused && !s.endedAt) return sum;
       if (task.timingTrust === 'certified' && s.businessDurationMs != null) {
         if (!s.endedAt && s.status === task.status && task.status === 'In Progress') {
-          return sum + segmentBusinessMs(s, now, schedule);
+          return sum + segmentBusinessMs(s, now, schedule, holidays);
         }
         return sum + s.businessDurationMs;
       }
-      return sum + segmentBusinessMs(s, now, schedule);
+      return sum + segmentBusinessMs(s, now, schedule, holidays);
     }, 0);
   return Math.round((ms / 3_600_000) * 100) / 100;
 }
@@ -148,10 +151,92 @@ export function transitionTaskOnServer(
     ...ensured,
     status: nextStatus,
     statusHistory: history,
+    timerPaused: false,
     timeLogged,
     estimateLockedAt,
     timingTrust,
     completedAt: nextStatus === 'Done' ? at.toISOString() : undefined,
+    activity: [log, ...ensured.activity],
+    version: (ensured.version || 0) + 1
+  };
+}
+
+export function pauseWorkTimer(
+  task: Task,
+  actor: User,
+  at: Date = new Date(),
+  exceptions: ScheduleExceptionDoc[] = []
+): Task {
+  const ensured = ensureTaskTiming(task, at);
+  if (ensured.status !== 'In Progress') return ensured;
+  if (ensured.timerPaused) return ensured;
+
+  const history = [...(ensured.statusHistory || [])];
+  const openIdx = history.length - 1;
+  if (openIdx >= 0 && !history[openIdx].endedAt) {
+    const open = history[openIdx];
+    const wallMs = Math.max(0, at.getTime() - new Date(open.startedAt).getTime());
+    const openSchedule = resolveSegmentSchedule(open, exceptions);
+    const bizMs =
+      open.status === 'In Progress'
+        ? businessMsBetween(new Date(open.startedAt), at, openSchedule)
+        : 0;
+    history[openIdx] = {
+      ...open,
+      endedAt: at.toISOString(),
+      durationMs: wallMs,
+      businessDurationMs: bizMs,
+      assigneeEmail: open.assigneeEmail || (ensured.assignee.email || '').toLowerCase()
+    };
+  }
+
+  const log: Activity = {
+    id: `act-log-${at.getTime()}`,
+    type: 'log',
+    user: actor,
+    content: 'paused the work timer — task stays In Progress',
+    timestamp: nowTimestamp(at)
+  };
+
+  const next = { ...ensured, statusHistory: history, timerPaused: true };
+  return {
+    ...next,
+    timeLogged: getWorkingHours(next, at),
+    activity: [log, ...ensured.activity],
+    version: (ensured.version || 0) + 1
+  };
+}
+
+export function resumeWorkTimer(
+  task: Task,
+  actor: User,
+  at: Date = new Date()
+): Task {
+  const ensured = ensureTaskTiming(task, at);
+  if (ensured.status !== 'In Progress') return ensured;
+  if (!ensured.timerPaused) return ensured;
+
+  const history = [...(ensured.statusHistory || [])];
+  history.push({
+    status: 'In Progress',
+    startedAt: at.toISOString(),
+    durationMs: 0,
+    assigneeEmail: (ensured.assignee.email || '').toLowerCase(),
+    businessDurationMs: 0
+  });
+
+  const log: Activity = {
+    id: `act-log-${at.getTime()}`,
+    type: 'log',
+    user: actor,
+    content: 'resumed the work timer',
+    timestamp: nowTimestamp(at)
+  };
+
+  const next = { ...ensured, statusHistory: history, timerPaused: false };
+  return {
+    ...next,
+    timeLogged: getWorkingHours(next, at),
     activity: [log, ...ensured.activity],
     version: (ensured.version || 0) + 1
   };
@@ -164,10 +249,11 @@ export function markLegacyTasks(tasks: Task[]): Task[] {
 export function enrichTaskForClient(
   task: Task,
   now: Date = new Date(),
-  exceptions: ScheduleExceptionDoc[] = []
+  exceptions: ScheduleExceptionDoc[] = [],
+  holidays: Set<string> = new Set()
 ): Task {
   const wall = getWallWorkingHours(task, now);
-  const business = getCertifiedWorkingHours(task, now, exceptions);
+  const business = getCertifiedWorkingHours(task, now, exceptions, holidays);
   return { ...task, timeLogged: wall, timeLoggedWall: wall, timeLoggedBusiness: business };
 }
 

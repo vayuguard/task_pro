@@ -6,11 +6,14 @@ import { sendEmployeeCredentials } from './mail.ts';
 import { verifyPassword, hashPassword } from './auth/password.ts';
 import { createSession, destroySession, getSession } from './auth/session.ts';
 import { requireAuth, requireAdmin, sessionToClient, type AuthedRequest } from './middleware/auth.ts';
-import { transitionTaskOnServer, markLegacyTasks, enrichTaskForClient, reassignTask } from './taskService.ts';
+import { transitionTaskOnServer, markLegacyTasks, enrichTaskForClient, reassignTask, pauseWorkTimer, resumeWorkTimer } from './taskService.ts';
 import { computePerformanceScore, computeTeamPerformance } from './scoring.ts';
 import type { ScheduleExceptionDoc } from './scheduleExceptions.ts';
 import type { Task, TaskStatus } from '../src/types.ts';
-import { formatTimeIST } from '../src/utils/time.ts';
+import { formatTimeIST, formatIsoDateIST } from '../src/utils/time.ts';
+import { buildTimesheet } from './timesheet.ts';
+import { isPastLoginWindow, isPastWorkHours } from './istTime.ts';
+import { patchSessionGeo } from './auth/session.ts';
 
 function stripMongoId<T extends Record<string, unknown>>(doc: T | null): Omit<T, '_id'> | null {
   if (!doc) return null;
@@ -67,6 +70,15 @@ async function loadScheduleExceptions(): Promise<ScheduleExceptionDoc[]> {
   }));
 }
 
+async function loadHolidays(): Promise<Set<string>> {
+  const docs = await getDb().collection('holidays').find({}).toArray();
+  return new Set(docs.map((d) => String(d.date)));
+}
+
+function notArchived(task: Task) {
+  return !task.archivedAt;
+}
+
 export function createApiRouter(): Router {
   const router = Router();
 
@@ -97,6 +109,28 @@ export function createApiRouter(): Router {
         return;
       }
 
+      // Employees have a split login window:
+      // - can login before 10:30 AM IST
+      // - if not, cannot login until 12:30 PM IST
+      if (account.role === 'employee') {
+        if (isPastWorkHours()) {
+          res.status(403).json({ ok: false, error: 'Work hours ended at 6:00 PM IST. Login is not available until tomorrow 10:30 AM.' });
+          return;
+        }
+        if (isPastLoginWindow()) {
+          res.status(403).json({ ok: false, error: 'Login window closed between 10:30 AM and 12:30 PM IST. Please try again at 12:30 PM.' });
+          return;
+        }
+      }
+
+      const loginIp =
+        String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+
+      await getDb().collection('users').updateOne(
+        { id: account.id },
+        { $set: { lastLoginAt: new Date(), lastLoginIp: loginIp } }
+      );
+
       const serverSession = await createSession(res, {
         userId: account.id as string,
         email: account.email as string,
@@ -104,6 +138,20 @@ export function createApiRouter(): Router {
         profile: account.profile as { name: string; email?: string; avatar: string; role?: string },
         mfaVerified: !(account.mfaRequired as boolean)
       });
+
+      // Record login event for admin visibility.
+      const loginRecord = {
+        email: (account.email as string).toLowerCase(),
+        name: (account.profile as { name: string }).name,
+        ip: loginIp,
+        loginAt: new Date(),
+        enterAt: new Date(),
+        enterIp: loginIp,
+        exitAt: null,
+        sessionId: serverSession.id
+      };
+      void getDb().collection('login_log').insertOne(loginRecord).catch(() => {});
+      void patchSessionGeo(serverSession.id, loginIp).catch(() => {});
 
       res.json({
         ok: true,
@@ -123,14 +171,19 @@ export function createApiRouter(): Router {
         return;
       }
 
-      // Keep MFA as a string so formatting is never altered.
+      // Source of truth is ADMIN MFA in code. Keep as string so digits are never altered.
       const submitted = String(code).trim().replace(/\s+/g, '');
-      const meta = await getDb().collection('meta').findOne({ key: 'app' });
-      const expected = String(meta?.demoMfaCode || DEMO_MFA_CODE).trim();
+      const expected = String(DEMO_MFA_CODE).trim();
       if (submitted !== expected) {
         res.status(401).json({ ok: false, error: 'Invalid verification code.' });
         return;
       }
+
+      // Keep meta in sync for ops/docs (non-blocking for auth).
+      void getDb()
+        .collection('meta')
+        .updateOne({ key: 'app' }, { $set: { demoMfaCode: expected, updatedAt: new Date() } })
+        .catch(() => {});
 
       const account = await getDb().collection('users').findOne({
         email: email.trim().toLowerCase()
@@ -154,8 +207,51 @@ export function createApiRouter(): Router {
   });
 
   router.post('/auth/logout', async (req, res) => {
+    const session = await getSession(req);
+    const logoutIp =
+      String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+    if (session) {
+      void getDb()
+        .collection('login_log')
+        .updateOne(
+          { sessionId: session.id },
+          { $set: { exitAt: new Date(), exitIp: logoutIp } }
+        )
+        .catch(() => {});
+    }
     await destroySession(req, res);
     res.json({ ok: true });
+  });
+
+  router.post('/auth/password', requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const { currentPassword, newPassword } = req.body as {
+        currentPassword?: string;
+        newPassword?: string;
+      };
+      if (!currentPassword || !newPassword || newPassword.length < 6) {
+        res.status(400).json({ ok: false, error: 'Current password and a new password (6+ chars) are required.' });
+        return;
+      }
+      const user = await getDb().collection('users').findOne({ email: req.session!.email.toLowerCase() });
+      if (!user || !verifyPassword(currentPassword, String(user.password))) {
+        res.status(401).json({ ok: false, error: 'Current password is incorrect.' });
+        return;
+      }
+      await getDb().collection('users').updateOne(
+        { id: user.id },
+        { $set: { password: hashPassword(newPassword), passwordChangedAt: new Date() } }
+      );
+      await appendAudit(
+        { email: req.session!.email, role: req.session!.role },
+        'auth.password.change',
+        req.session!.email,
+        {}
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
   });
 
   router.get('/auth/me', requireAuth, async (req: AuthedRequest, res) => {
@@ -168,19 +264,20 @@ export function createApiRouter(): Router {
       const session = req.session!;
       const isAdmin = session.role === 'admin';
 
-      const [allTasks, employees, progressLogs, projectsHealth, teamMembers, channels] =
+      const [allTasks, employees, progressLogs, projectsHealth, teamMembers, channels, holidayDocs] =
         await Promise.all([
           db.collection('tasks').find({}).toArray(),
           db.collection('employees').find({}).toArray(),
           db.collection('progress_logs').find({}).toArray(),
           db.collection('projects_health').find({}).toArray(),
           db.collection('team_members').find({}).toArray(),
-          db.collection('chat_channels').find({}).toArray()
+          db.collection('chat_channels').find({}).toArray(),
+          db.collection('holidays').find({}).toArray()
         ]);
 
       const normalized = markLegacyTasks(
         normalizeTasks(allTasks.map((t) => stripMongoId(t) as never))
-      );
+      ).filter(notArchived);
       const tasks = isAdmin
         ? normalized
         : normalized.filter((t) =>
@@ -194,7 +291,12 @@ export function createApiRouter(): Router {
         progressLogs: progressLogs.map((l) => stripMongoId(l)),
         projectsHealth: projectsHealth.map((p) => stripMongoId(p)),
         teamMembers: teamMembers.map((m) => stripMongoId(m)),
-        channels: channels.map((c) => stripMongoId(c))
+        channels: channels.map((c) => stripMongoId(c)),
+        holidays: holidayDocs.map((h) => ({
+          id: String(h.id || h._id),
+          date: String(h.date),
+          name: String(h.name || 'Holiday')
+        }))
       });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
@@ -366,7 +468,9 @@ export function createApiRouter(): Router {
   router.get('/tasks', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const docs = await getDb().collection('tasks').find({}).toArray();
-      let tasks = markLegacyTasks(normalizeTasks(docs.map((t) => stripMongoId(t) as never)));
+      let tasks = markLegacyTasks(normalizeTasks(docs.map((t) => stripMongoId(t) as never))).filter(
+        notArchived
+      );
       if (req.session!.role !== 'admin') {
         tasks = tasks.filter((t) =>
           isTaskAssignedToUser(t, { ...req.session!.profile, email: req.session!.email })
@@ -423,12 +527,36 @@ export function createApiRouter(): Router {
 
       const actor = { ...session.profile, email: session.email };
       const exceptions = await loadScheduleExceptions();
+      const holidays = await loadHolidays();
+      const now = new Date();
+
+      // Enforce single In Progress task per assignee: auto-pause others.
+      if (status === 'In Progress') {
+        const assigneeEmail = (prev.assignee.email || session.email).toLowerCase();
+        const allTasks = await col.find({}).toArray();
+        for (const doc of allTasks) {
+          const other = normalizeTask(stripMongoId(doc) as Task);
+          if (other.id === taskId) continue;
+          if (other.status !== 'In Progress') continue;
+          if (other.timerPaused) continue;
+          const otherEmail = (other.assignee.email || '').toLowerCase();
+          if (otherEmail !== assigneeEmail) continue;
+          const paused = pauseWorkTimer(other, actor, now, exceptions);
+          const enriched = enrichTaskForClient(paused, now, exceptions, holidays);
+          await col.updateOne({ id: other.id }, { $set: { ...enriched, updatedAt: now } });
+          await appendTaskEvent(other.id, 'timer.auto_pause', session.email, {
+            reason: `auto-paused: ${taskId} moved to In Progress`
+          });
+        }
+      }
+
       const task = enrichTaskForClient(
-        transitionTaskOnServer(prev, status, actor, new Date(), exceptions),
-        new Date(),
-        exceptions
+        transitionTaskOnServer(prev, status, actor, now, exceptions),
+        now,
+        exceptions,
+        holidays
       );
-      await col.updateOne({ id: taskId }, { $set: { ...task, updatedAt: new Date() } });
+      await col.updateOne({ id: taskId }, { $set: { ...task, updatedAt: now } });
       await appendTaskEvent(taskId, 'transition', session.email, {
         from: prev.status,
         to: status,
@@ -536,10 +664,333 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.delete('/tasks/:id', requireAuth, requireAdmin, async (req, res) => {
+  router.delete('/tasks/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
     try {
-      await getDb().collection('tasks').deleteOne({ id: req.params.id });
+      const existing = await getDb().collection('tasks').findOne({ id: req.params.id });
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Task not found' });
+        return;
+      }
+      const archivedAt = new Date().toISOString();
+      await getDb().collection('tasks').updateOne(
+        { id: req.params.id },
+        { $set: { archivedAt, updatedAt: new Date() } }
+      );
+      await appendAudit(
+        { email: req.session!.email, role: req.session!.role },
+        'task.archive',
+        req.params.id,
+        {}
+      );
+      res.json({ ok: true, archived: req.params.id });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.post('/tasks/:id/timer', requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const action = String((req.body as { action?: string }).action || '');
+      const col = getDb().collection('tasks');
+      const existing = await col.findOne({ id: req.params.id });
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Task not found' });
+        return;
+      }
+      const prev = normalizeTask(stripMongoId(existing) as Task);
+      const session = req.session!;
+      if (
+        session.role !== 'admin' &&
+        !isTaskAssignedToUser(prev, { ...session.profile, email: session.email })
+      ) {
+        res.status(403).json({ ok: false, error: 'Not your task.' });
+        return;
+      }
+      if (prev.status !== 'In Progress') {
+        res.status(400).json({ ok: false, error: 'Timer only applies while In Progress.' });
+        return;
+      }
+      const actor = { ...session.profile, email: session.email };
+      const exceptions = await loadScheduleExceptions();
+      const holidays = await loadHolidays();
+      const now = new Date();
+
+      // When resuming, auto-pause any other running In Progress task for the same assignee.
+      if (action === 'resume') {
+        const assigneeEmail = (prev.assignee.email || session.email).toLowerCase();
+        const allTasks = await col.find({}).toArray();
+        for (const doc of allTasks) {
+          const other = normalizeTask(stripMongoId(doc) as Task);
+          if (other.id === prev.id) continue;
+          if (other.status !== 'In Progress') continue;
+          if (other.timerPaused) continue;
+          if ((other.assignee.email || '').toLowerCase() !== assigneeEmail) continue;
+          const paused = pauseWorkTimer(other, actor, now, exceptions);
+          const enriched = enrichTaskForClient(paused, now, exceptions, holidays);
+          await col.updateOne({ id: other.id }, { $set: { ...enriched, updatedAt: now } });
+          await appendTaskEvent(other.id, 'timer.auto_pause', session.email, {
+            reason: `auto-paused: ${prev.id} timer resumed`
+          });
+        }
+      }
+
+      const next =
+        action === 'resume'
+          ? resumeWorkTimer(prev, actor, now)
+          : action === 'pause'
+            ? pauseWorkTimer(prev, actor, now, exceptions)
+            : null;
+      if (!next) {
+        res.status(400).json({ ok: false, error: 'action must be pause or resume' });
+        return;
+      }
+      const task = enrichTaskForClient(next, now, exceptions, holidays);
+      await col.updateOne({ id: task.id }, { $set: { ...task, updatedAt: now } });
+      await appendTaskEvent(task.id, `timer.${action}`, session.email, { paused: task.timerPaused });
+      res.json({ ok: true, task });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.post('/tasks/:id/review', requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const outcome = String((req.body as { outcome?: string }).outcome || '') as Task['reviewOutcome'];
+      if (outcome !== 'accepted' && outcome !== 'changes_requested') {
+        res.status(400).json({ ok: false, error: 'outcome must be accepted or changes_requested' });
+        return;
+      }
+      const col = getDb().collection('tasks');
+      const existing = await col.findOne({ id: req.params.id });
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Task not found' });
+        return;
+      }
+      const prev = normalizeTask(stripMongoId(existing) as Task);
+      if (prev.status !== 'Review') {
+        res.status(400).json({ ok: false, error: 'Review decisions apply only in Review.' });
+        return;
+      }
+      const session = req.session!;
+      const actor = { ...session.profile, email: session.email };
+      const exceptions = await loadScheduleExceptions();
+      const holidays = await loadHolidays();
+      const now = new Date();
+      const nextStatus: TaskStatus = outcome === 'accepted' ? 'Done' : 'In Progress';
+
+      // Auto-pause other running tasks when returning to In Progress.
+      if (nextStatus === 'In Progress') {
+        const assigneeEmail = (prev.assignee.email || session.email).toLowerCase();
+        const allTasks = await col.find({}).toArray();
+        for (const doc of allTasks) {
+          const other = normalizeTask(stripMongoId(doc) as Task);
+          if (other.id === prev.id) continue;
+          if (other.status !== 'In Progress') continue;
+          if (other.timerPaused) continue;
+          if ((other.assignee.email || '').toLowerCase() !== assigneeEmail) continue;
+          const paused = pauseWorkTimer(other, actor, now, exceptions);
+          const enriched = enrichTaskForClient(paused, now, exceptions, holidays);
+          await col.updateOne({ id: other.id }, { $set: { ...enriched, updatedAt: now } });
+          await appendTaskEvent(other.id, 'timer.auto_pause', session.email, {
+            reason: `auto-paused: ${prev.id} returned from review`
+          });
+        }
+      }
+
+      let task = transitionTaskOnServer(prev, nextStatus, actor, now, exceptions);
+      task = enrichTaskForClient({ ...task, reviewOutcome: outcome }, now, exceptions, holidays);
+      await col.updateOne({ id: task.id }, { $set: { ...task, updatedAt: now } });
+      await appendTaskEvent(task.id, 'review', session.email, { outcome, to: nextStatus });
+      res.json({ ok: true, task });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/activity', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(200, Math.max(20, Number(req.query.limit) || 80));
+      const [audit, events] = await Promise.all([
+        getDb().collection('audit_events').find({}).sort({ createdAt: -1 }).limit(limit).toArray(),
+        getDb().collection('task_events').find({}).sort({ createdAt: -1 }).limit(limit).toArray()
+      ]);
+      const rows = [
+        ...audit.map((d) => ({
+          id: String(d._id),
+          kind: 'audit' as const,
+          action: String(d.action),
+          actor: (d.actor as { email?: string })?.email || 'unknown',
+          target: String(d.target || ''),
+          detail: d.detail || {},
+          createdAt: d.createdAt
+        })),
+        ...events.map((d) => ({
+          id: String(d._id),
+          kind: 'task' as const,
+          action: String(d.type),
+          actor: String(d.actor || ''),
+          target: String(d.taskId || ''),
+          detail: d.payload || {},
+          createdAt: d.createdAt
+        }))
+      ]
+        .sort((a, b) => new Date(b.createdAt as Date).getTime() - new Date(a.createdAt as Date).getTime())
+        .slice(0, limit);
+      res.json({ ok: true, events: rows });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/timesheet', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const to = String(req.query.to || formatIsoDateIST(new Date()));
+      const from = String(req.query.from || formatIsoDateIST(new Date(Date.now() - 13 * 86_400_000)));
+      const email =
+        req.session!.role === 'admin'
+          ? String(req.query.email || '')
+          : req.session!.email;
+      const docs = await getDb().collection('tasks').find({}).toArray();
+      const tasks = normalizeTasks(docs.map((t) => stripMongoId(t) as never));
+      const exceptions = await loadScheduleExceptions();
+      const holidays = await loadHolidays();
+      const rows = buildTimesheet(tasks, from, to, exceptions, holidays, email || undefined);
+      res.json({ ok: true, from, to, rows });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/notifications', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const session = req.session!;
+      const docs = await getDb().collection('tasks').find({}).toArray();
+      const tasks = markLegacyTasks(normalizeTasks(docs.map((t) => stripMongoId(t) as never))).filter(
+        notArchived
+      );
+      const mine =
+        session.role === 'admin'
+          ? tasks
+          : tasks.filter((t) => isTaskAssignedToUser(t, { ...session.profile, email: session.email }));
+      const today = formatIsoDateIST(new Date());
+      const items: Array<{ id: string; tone: string; title: string; body: string; href: string }> = [];
+
+      for (const t of mine) {
+        if (t.status !== 'Done' && t.dueDate && t.dueDate !== 'No due date') {
+          const due = new Date(t.dueDate);
+          if (!Number.isNaN(due.getTime())) {
+            const dueDay = formatIsoDateIST(due);
+            if (dueDay < today) {
+              items.push({
+                id: `overdue-${t.id}`,
+                tone: 'danger',
+                title: 'Overdue',
+                body: t.title,
+                href: `/tasks/${t.id}`
+              });
+            } else if (dueDay === today) {
+              items.push({
+                id: `due-${t.id}`,
+                tone: 'warning',
+                title: 'Due today',
+                body: t.title,
+                href: `/tasks/${t.id}`
+              });
+            }
+          }
+        }
+      }
+
+      const liveByPerson = new Map<string, number>();
+      for (const t of mine) {
+        if (t.status === 'In Progress' && !t.timerPaused) {
+          const key = (t.assignee.email || t.assignee.name).toLowerCase();
+          liveByPerson.set(key, (liveByPerson.get(key) || 0) + 1);
+        }
+      }
+      for (const [person, count] of liveByPerson) {
+        if (count > 1) {
+          items.push({
+            id: `overlap-${person}`,
+            tone: 'warning',
+            title: 'Overlapping timers',
+            body: `${person} has ${count} tasks In Progress`,
+            href: '/board'
+          });
+        }
+      }
+
+      res.json({ ok: true, items: items.slice(0, 40) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/holidays', requireAuth, async (_req, res) => {
+    try {
+      const docs = await getDb().collection('holidays').find({}).sort({ date: 1 }).toArray();
+      res.json({
+        ok: true,
+        holidays: docs.map((d) => ({
+          id: String(d.id || d._id),
+          date: String(d.date),
+          name: String(d.name || 'Holiday')
+        }))
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.post('/holidays', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
+    try {
+      const { date, name } = req.body as { date?: string; name?: string };
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ ok: false, error: 'date must be YYYY-MM-DD' });
+        return;
+      }
+      const doc = { id: `hol-${Date.now()}`, date, name: name?.trim() || 'Holiday', createdAt: new Date() };
+      await getDb().collection('holidays').insertOne(doc);
+      await appendAudit(
+        { email: req.session!.email, role: req.session!.role },
+        'holiday.create',
+        date,
+        { name: doc.name }
+      );
+      res.json({ ok: true, holiday: doc });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.delete('/holidays/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
+    try {
+      await getDb()
+        .collection('holidays')
+        .deleteOne({ $or: [{ id: req.params.id }, { date: req.params.id }] });
       res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // Admin can see login history
+  router.get('/login-log', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(200, Math.max(10, Number(req.query.limit) || 50));
+      const docs = await getDb().collection('login_log').find({}).sort({ loginAt: -1 }).limit(limit).toArray();
+      res.json({
+        ok: true,
+        entries: docs.map((d) => ({
+          email: String(d.email),
+          name: String(d.name || ''),
+          ip: String(d.ip || ''),
+          enterAt: d.enterAt || d.loginAt,
+          enterIp: String(d.enterIp || d.ip || ''),
+          exitAt: d.exitAt || null,
+          exitIp: String(d.exitIp || '')
+        }))
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }

@@ -23,6 +23,7 @@ export interface BootstrapData {
   projectsHealth: ProjectHealth[];
   teamMembers: User[];
   channels: { name: string; description: string; unread: boolean }[];
+  holidays?: Array<{ id: string; date: string; name: string }>;
 }
 
 export interface PerformanceScoreDto {
@@ -72,6 +73,16 @@ export async function apiLogout(): Promise<{ ok: true }> {
   return request('/auth/logout', { method: 'POST' });
 }
 
+export async function apiChangePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ ok: true }> {
+  return request('/auth/password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+}
+
 export async function apiMe(): Promise<{ ok: true; session: AuthSession }> {
   return request('/auth/me');
 }
@@ -103,6 +114,109 @@ export async function apiTransitionTask(
     method: 'POST',
     body: JSON.stringify({ status, expectedVersion })
   });
+}
+
+export async function apiPauseTimer(taskId: string): Promise<{ ok: true; task: Task }> {
+  return request(`/tasks/${encodeURIComponent(taskId)}/timer`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'pause' })
+  });
+}
+
+export async function apiResumeTimer(taskId: string): Promise<{ ok: true; task: Task }> {
+  return request(`/tasks/${encodeURIComponent(taskId)}/timer`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'resume' })
+  });
+}
+
+export async function apiReviewTask(
+  taskId: string,
+  outcome: 'accepted' | 'changes_requested'
+): Promise<{ ok: true; task: Task }> {
+  return request(`/tasks/${encodeURIComponent(taskId)}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ outcome })
+  });
+}
+
+export async function apiArchiveTask(taskId: string): Promise<{ ok: true; archived: string }> {
+  return request(`/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+}
+
+export async function apiGetActivity(limit = 80): Promise<{
+  ok: true;
+  events: Array<{
+    id: string;
+    kind: 'audit' | 'task';
+    action: string;
+    actor: string;
+    target: string;
+    detail: Record<string, unknown>;
+    createdAt: string;
+  }>;
+}> {
+  return request(`/activity?limit=${limit}`);
+}
+
+export async function apiGetTimesheet(from?: string, to?: string, email?: string): Promise<{
+  ok: true;
+  from: string;
+  to: string;
+  rows: Array<{
+    date: string;
+    email: string;
+    name: string;
+    hours: number;
+    tasks: Array<{ id: string; title: string; hours: number }>;
+  }>;
+}> {
+  const q = new URLSearchParams();
+  if (from) q.set('from', from);
+  if (to) q.set('to', to);
+  if (email) q.set('email', email);
+  const suffix = q.toString() ? `?${q}` : '';
+  return request(`/timesheet${suffix}`);
+}
+
+export async function apiGetNotifications(): Promise<{
+  ok: true;
+  items: Array<{ id: string; tone: string; title: string; body: string; href: string }>;
+}> {
+  return request('/notifications');
+}
+
+export async function apiListHolidays(): Promise<{
+  ok: true;
+  holidays: Array<{ id: string; date: string; name: string }>;
+}> {
+  return request('/holidays');
+}
+
+export async function apiCreateHoliday(date: string, name: string): Promise<{
+  ok: true;
+  holiday: { id: string; date: string; name: string };
+}> {
+  return request('/holidays', { method: 'POST', body: JSON.stringify({ date, name }) });
+}
+
+export async function apiDeleteHoliday(id: string): Promise<{ ok: true }> {
+  return request(`/holidays/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function apiGetLoginLog(limit = 50): Promise<{
+  ok: true;
+  entries: Array<{
+    email: string;
+    name: string;
+    ip: string;
+    enterAt: string;
+    enterIp: string;
+    exitAt: string | null;
+    exitIp: string;
+  }>;
+}> {
+  return request(`/login-log?limit=${limit}`);
 }
 
 export async function apiGetPerformance(
