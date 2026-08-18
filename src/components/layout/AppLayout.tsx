@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, memo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -21,7 +21,7 @@ const nav = [
   { to: '/settings', label: 'Settings', icon: 'settings' }
 ];
 
-export function AppLayout() {
+export const AppLayout = memo(function AppLayout() {
   const { session, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -88,7 +88,17 @@ export function AppLayout() {
     const load = () => {
       apiGetNotifications()
         .then((r) => {
-          if (!cancelled) setNotes(r.items);
+          if (cancelled) return;
+          setNotes((prev) => {
+            const next = r.items;
+            if (
+              prev.length === next.length &&
+              prev.every((n, i) => n.id === next[i]?.id && n.title === next[i]?.title && n.body === next[i]?.body)
+            ) {
+              return prev;
+            }
+            return next;
+          });
         })
         .catch(() => {});
     };
@@ -284,4 +294,4 @@ export function AppLayout() {
       <CreateTaskModal open={createTaskOpen} onClose={closeCreateTask} />
     </div>
   );
-}
+});

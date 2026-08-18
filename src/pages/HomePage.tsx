@@ -143,7 +143,7 @@ export default function HomePage() {
 
   const maxLoad = useMemo(() => Math.max(1, ...workload.map((w) => w.businessHours)), [workload]);
 
-  if (loading) return <PageLoading />;
+  if (loading && visibleTasks.length === 0) return <PageLoading />;
 
   const { open, done, inProgress, overdue } = groups;
   const donePct = visibleTasks.length ? Math.round((done.length / visibleTasks.length) * 100) : 0;

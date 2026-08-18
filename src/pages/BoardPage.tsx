@@ -29,8 +29,15 @@ function boardColumnOf(task: Task): BoardColumn {
   return task.status;
 }
 
-function TaskCard({ task, dragging }: { task: Task; dragging?: boolean }) {
-  const { holidayDates } = useData();
+function TaskCard({
+  task,
+  dragging,
+  holidayDates
+}: {
+  task: Task;
+  dragging?: boolean;
+  holidayDates: Set<string>;
+}) {
   const liveEnabled = isWorkTimerRunning(task);
   const liveNow = useLiveTick(1000, liveEnabled);
   const liveHours = useMemo(() => {
@@ -59,19 +66,29 @@ function TaskCard({ task, dragging }: { task: Task; dragging?: boolean }) {
   );
 }
 
-function DraggableTask({ task }: { task: Task }) {
+function DraggableTask({ task, holidayDates }: { task: Task; holidayDates: Set<string> }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
   const style = transform ? { transform: `translate(${transform.x}px, ${transform.y}px)` } : undefined;
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} className="touch-none" data-task-id={task.id} tabIndex={0}>
       <Link to={`/tasks/${task.id}`} onClick={(e) => isDragging && e.preventDefault()}>
-        <TaskCard task={task} dragging={isDragging} />
+        <TaskCard task={task} dragging={isDragging} holidayDates={holidayDates} />
       </Link>
     </div>
   );
 }
 
-function Column({ id, title, tasks }: { id: BoardColumn; title: string; tasks: Task[] }) {
+function Column({
+  id,
+  title,
+  tasks,
+  holidayDates
+}: {
+  id: BoardColumn;
+  title: string;
+  tasks: Task[];
+  holidayDates: Set<string>;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const totalHours = tasks.reduce((sum, t) => sum + getTaskHours(t), 0);
   return (
@@ -94,7 +111,7 @@ function Column({ id, title, tasks }: { id: BoardColumn; title: string; tasks: T
         ) : (
           tasks.map((t) => (
             <div key={t.id}>
-              <DraggableTask task={t} />
+              <DraggableTask task={t} holidayDates={holidayDates} />
             </div>
           ))
         )}
@@ -104,7 +121,7 @@ function Column({ id, title, tasks }: { id: BoardColumn; title: string; tasks: T
 }
 
 export default function BoardPage() {
-  const { visibleTasks, loading, transitionTask, pauseTimer, resumeTimer } = useData();
+  const { visibleTasks, loading, transitionTask, pauseTimer, resumeTimer, holidayDates } = useData();
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -168,7 +185,7 @@ export default function BoardPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [visibleTasks, transitionTask, pauseTimer, resumeTimer]);
 
-  if (loading) return <PageLoading />;
+  if (loading && visibleTasks.length === 0) return <PageLoading />;
 
   return (
     <div>
@@ -185,11 +202,11 @@ export default function BoardPage() {
         <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar lg:grid lg:grid-cols-5 lg:overflow-visible">
           {columns.map((col) => (
             <div key={col}>
-              <Column id={col} title={col} tasks={byColumn[col]} />
+              <Column id={col} title={col} tasks={byColumn[col]} holidayDates={holidayDates} />
             </div>
           ))}
         </div>
-        <DragOverlay>{activeTask ? <TaskCard task={activeTask} dragging /> : null}</DragOverlay>
+        <DragOverlay>{activeTask ? <TaskCard task={activeTask} dragging holidayDates={holidayDates} /> : null}</DragOverlay>
       </DndContext>
     </div>
   );

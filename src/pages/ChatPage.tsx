@@ -34,7 +34,7 @@ import type { User } from '../types';
 
 const QUICK_REACTIONS = ['👍', '✅', '🎉', '❤️', '👀', '🙏'];
 const GROUP_WINDOW_MS = 5 * 60_000;
-const POLL_MS = 8000;
+const POLL_MS = 15_000;
 
 function userKeyOf(u: { email?: string; name?: string } | undefined) {
   return (u?.email || u?.name || '').trim().toLowerCase();

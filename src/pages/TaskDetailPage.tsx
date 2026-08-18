@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useData } from '../context/DataContext';
 import { PageHeader } from '../components/ui/Panel';
@@ -8,7 +8,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { StatusBadge, PriorityBadge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { TaskStatus, Subtask } from '../types';
+import { Task, TaskStatus, Subtask } from '../types';
 import { canAssignToOthers } from '../auth/auth';
 import { getTaskHours, getTaskWallHours } from '../utils/taskDisplay';
 import { dueDateFromInput, dueDateToInput, formatDayLabelIST, formatTimeIST, nowTimestamp } from '../utils/time';
@@ -35,29 +35,6 @@ export default function TaskDetailPage() {
   const isAdmin = session?.role === 'admin';
   const [tab, setTab] = useState<'details' | 'subtasks' | 'activity' | 'attachments'>('details');
 
-  const liveEnabled = Boolean(task && isWorkTimerRunning(task));
-  const liveNow = useLiveTick(1000, liveEnabled);
-  const liveWorkHours = useMemo(() => {
-    if (!task || task.status !== 'In Progress') return null;
-    return getWorkingHours(task, new Date(liveNow), holidayDates);
-  }, [liveNow, task, holidayDates]);
-  const timerState = useMemo(() => {
-    if (!task || task.status !== 'In Progress') return null;
-    if (task.timerPaused) return { running: false, label: 'Paused by you' };
-    const now = new Date(liveNow);
-    if (isWithinBusinessHours(now)) return { running: true, label: 'Running now' };
-    const next = nextBusinessStart(now);
-    return {
-      running: false,
-      label: `Office hours pause · resumes ${formatDayLabelIST(next.getTime(), liveNow)} at ${formatTimeIST(next)} IST`
-    };
-  }, [liveNow, task]);
-
-  const sections = useMemo(() => {
-    if (!task) return [];
-    return sectionBreakdown(task, new Date(liveEnabled ? liveNow : Date.now()), holidayDates);
-  }, [task, liveEnabled, liveNow, holidayDates]);
-
   // Keep due date picker synced when navigating between tasks.
   useEffect(() => {
     if (!task) return;
@@ -66,13 +43,15 @@ export default function TaskDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id]);
 
+  const missingRetryFor = useRef<string | undefined>();
   useEffect(() => {
-    if (!loading && !task && !error) {
-      void reload();
-    }
-  }, [loading, task, error, reload]);
+    if (loading || task || error || !id) return;
+    if (missingRetryFor.current === id) return;
+    missingRetryFor.current = id;
+    void reload();
+  }, [loading, task, error, id, reload]);
 
-  if (loading) return <PageLoading />;
+  if (loading && !task) return <PageLoading />;
   if (!task)
     return (
       <EmptyState
@@ -282,17 +261,7 @@ export default function TaskDetailPage() {
               {task.timingTrust === 'legacy' && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Legacy timing</span>
               )}
-              {liveWorkHours != null && (
-                <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-md"
-                  style={{
-                    backgroundColor: timerState?.running ? 'var(--accent-soft)' : 'var(--surface-sunken)',
-                    color: timerState?.running ? 'var(--accent)' : 'var(--ink-muted)'
-                  }}
-                >
-                  {timerState?.label}: {liveWorkHours.toFixed(1)}h
-                </span>
-              )}
+              <LiveTimerChip task={task} holidayDates={holidayDates} />
             </div>
             <div>
               <label className="label">Status</label>
@@ -373,7 +342,7 @@ export default function TaskDetailPage() {
               <div>
                 <p className="label">Spent (business)</p>
                 <p className="text-lg font-bold text-accent">
-                  {(liveWorkHours ?? getTaskHours(task)).toFixed(1)}h
+                  <LiveSpentHours task={task} holidayDates={holidayDates} />
                 </p>
                 <p className="text-xs text-ink-faint">Wall: {getTaskWallHours(task)}h</p>
               </div>
@@ -403,12 +372,7 @@ export default function TaskDetailPage() {
             <p className="text-[11px] text-ink-faint mb-2">
               In Motion uses business hours (Mon–Sat 10:00–18:00 IST). Other columns are dwell time.
             </p>
-            {sections.map((s) => (
-              <div key={s.status} className="flex justify-between text-xs py-1.5 border-b border-border last:border-0">
-                <span className={s.active ? 'text-accent font-semibold' : 'text-ink-muted'}>{s.label}</span>
-                <span className="font-mono">{s.display}</span>
-              </div>
-            ))}
+            <LiveSectionBreakdown task={task} holidayDates={holidayDates} />
           </div>
           {isAdmin && (
             <div className="panel p-4">
@@ -431,5 +395,59 @@ export default function TaskDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function LiveTimerChip({ task, holidayDates }: { task: Task; holidayDates: Set<string> }) {
+  const liveEnabled = isWorkTimerRunning(task);
+  const liveNow = useLiveTick(1000, liveEnabled);
+  if (task.status !== 'In Progress') return null;
+  const hours = getWorkingHours(task, new Date(liveNow), holidayDates);
+  const timerState = (() => {
+    if (task.timerPaused) return { running: false, label: 'Paused by you' };
+    const now = new Date(liveNow);
+    if (isWithinBusinessHours(now)) return { running: true, label: 'Running now' };
+    const next = nextBusinessStart(now);
+    return {
+      running: false,
+      label: `Office hours pause · resumes ${formatDayLabelIST(next.getTime(), liveNow)} at ${formatTimeIST(next)} IST`
+    };
+  })();
+  return (
+    <span
+      className="text-[10px] font-bold px-2 py-0.5 rounded-md"
+      style={{
+        backgroundColor: timerState.running ? 'var(--accent-soft)' : 'var(--surface-sunken)',
+        color: timerState.running ? 'var(--accent)' : 'var(--ink-muted)'
+      }}
+    >
+      {timerState.label}: {hours.toFixed(1)}h
+    </span>
+  );
+}
+
+function LiveSpentHours({ task, holidayDates }: { task: Task; holidayDates: Set<string> }) {
+  const liveEnabled = isWorkTimerRunning(task);
+  const liveNow = useLiveTick(1000, liveEnabled);
+  const hours =
+    task.status === 'In Progress'
+      ? getWorkingHours(task, new Date(liveNow), holidayDates)
+      : getTaskHours(task);
+  return <>{hours.toFixed(1)}h</>;
+}
+
+function LiveSectionBreakdown({ task, holidayDates }: { task: Task; holidayDates: Set<string> }) {
+  const liveEnabled = isWorkTimerRunning(task);
+  const liveNow = useLiveTick(1000, liveEnabled);
+  const sections = sectionBreakdown(task, new Date(liveEnabled ? liveNow : Date.now()), holidayDates);
+  return (
+    <>
+      {sections.map((s) => (
+        <div key={s.status} className="flex justify-between text-xs py-1.5 border-b border-border last:border-0">
+          <span className={s.active ? 'text-accent font-semibold' : 'text-ink-muted'}>{s.label}</span>
+          <span className="font-mono">{s.display}</span>
+        </div>
+      ))}
+    </>
   );
 }

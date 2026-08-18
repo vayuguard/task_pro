@@ -72,7 +72,7 @@ export default function TasksPage() {
     return arr;
   }, [filtered, sortBy]);
 
-  if (loading) return <PageLoading />;
+  if (loading && visibleTasks.length === 0) return <PageLoading />;
 
   return (
     <div>

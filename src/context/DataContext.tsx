@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Holiday, Task, User, ProjectHealth } from '../types';
 import {
   apiBootstrap,
@@ -16,6 +16,38 @@ import { useToast } from './ToastContext';
 import type { TaskStatus } from '../types';
 import { celebrate } from '../utils/celebrate';
 
+function snapshot(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function setIfChanged<T>(setter: React.Dispatch<React.SetStateAction<T>>, next: T) {
+  setter((prev) => (snapshot(prev) === snapshot(next) ? prev : next));
+}
+
+/** Live hour fields are recomputed on every fetch; ignore them so timers don't rebuild the page. */
+function taskCore(task: Task) {
+  const { timeLogged, timeLoggedWall, timeLoggedBusiness, ...rest } = task as Task & {
+    timeLoggedWall?: number;
+    timeLoggedBusiness?: number;
+  };
+  return rest;
+}
+
+function mergeTasks(prev: Task[], next: Task[]): Task[] {
+  const prevById = new Map(prev.map((t) => [t.id, t]));
+  const merged = next.map((incoming) => {
+    const existing = prevById.get(incoming.id);
+    if (!existing) return incoming;
+    return snapshot(taskCore(existing)) === snapshot(taskCore(incoming)) ? existing : incoming;
+  });
+  if (merged.length === prev.length && merged.every((t, i) => t === prev[i])) return prev;
+  return merged;
+}
+
 interface DataContextValue {
   tasks: Task[];
   teamMembers: User[];
@@ -24,7 +56,7 @@ interface DataContextValue {
   holidayDates: Set<string>;
   loading: boolean;
   error: string;
-  reload: () => Promise<void>;
+  reload: (opts?: { busy?: boolean }) => Promise<void>;
   updateTask: (task: Task, meta?: { estimateReason?: string }) => Promise<Task>;
   transitionTask: (taskId: string, status: TaskStatus, version?: number) => Promise<Task>;
   pauseTimer: (taskId: string) => Promise<Task>;
@@ -46,25 +78,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (opts?: { busy?: boolean }) => {
     if (!isLoggedIn) return;
-    setLoading(true);
-    setError('');
+    const busy = Boolean(opts?.busy);
+    if (busy) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const data = await apiBootstrap();
-      setTasks(normalizeTasks(data.tasks).filter((t) => !t.archivedAt));
-      setTeamMembers(data.teamMembers || []);
-      setProjectsHealth(data.projectsHealth || []);
-      setHolidays(data.holidays || []);
+      const nextTasks = normalizeTasks(data.tasks).filter((t) => !t.archivedAt);
+      setTasks((prev) => mergeTasks(prev, nextTasks));
+      setIfChanged(setTeamMembers, data.teamMembers || []);
+      setIfChanged(setProjectsHealth, data.projectsHealth || []);
+      setIfChanged(setHolidays, data.holidays || []);
+      if (busy) setError('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load data';
-      setError(msg);
-      toast(msg, 'error');
+      if (busy) {
+        setError(msg);
+        toastRef.current(msg, 'error');
+      }
     } finally {
-      setLoading(false);
+      if (busy) setLoading(false);
     }
-  }, [isLoggedIn, toast]);
+  }, [isLoggedIn]);
 
   useEffect(() => {
     if (authLoading) {
@@ -72,7 +113,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     if (isLoggedIn) {
-      void reload();
+      void reload({ busy: true });
     } else {
       setTasks([]);
       setTeamMembers([]);
@@ -86,35 +127,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!isLoggedIn || authLoading) return;
 
     const pollId = window.setInterval(() => {
-      void reload();
-    }, 30_000);
-
-    const onFocus = () => {
-      void reload();
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') void reload();
-    };
-
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
+      void reload({ busy: false });
+    }, 90_000);
 
     return () => {
       window.clearInterval(pollId);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [authLoading, isLoggedIn, reload]);
 
   const replaceTask = useCallback((task: Task) => {
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+    setTasks((prev) => {
+      const next = prev.map((t) => (t.id === task.id ? task : t));
+      return next.every((t, i) => t === prev[i]) ? prev : next;
+    });
   }, []);
 
   const replaceTasks = useCallback((next: Task[]) => {
     if (next.length === 0) return;
     const byId = new Map(next.map((t) => [t.id, t]));
-    setTasks((prev) => prev.map((t) => byId.get(t.id) ?? t));
+    setTasks((prev) => {
+      const merged = prev.map((t) => byId.get(t.id) ?? t);
+      return merged.every((t, i) => t === prev[i]) ? prev : merged;
+    });
   }, []);
 
   const updateTask = useCallback(
@@ -234,30 +268,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
 
-  return (
-    <DataContext.Provider
-      value={{
-        tasks,
-        teamMembers,
-        projectsHealth,
-        holidays,
-        holidayDates,
-        loading,
-        error,
-        reload,
-        updateTask,
-        transitionTask,
-        pauseTimer,
-        resumeTimer,
-        reviewTask,
-        deleteTask,
-        addTask,
-        visibleTasks
-      }}
-    >
-      {children}
-    </DataContext.Provider>
+  const value = useMemo(
+    () => ({
+      tasks,
+      teamMembers,
+      projectsHealth,
+      holidays,
+      holidayDates,
+      loading,
+      error,
+      reload,
+      updateTask,
+      transitionTask,
+      pauseTimer,
+      resumeTimer,
+      reviewTask,
+      deleteTask,
+      addTask,
+      visibleTasks
+    }),
+    [
+      tasks,
+      teamMembers,
+      projectsHealth,
+      holidays,
+      holidayDates,
+      loading,
+      error,
+      reload,
+      updateTask,
+      transitionTask,
+      pauseTimer,
+      resumeTimer,
+      reviewTask,
+      deleteTask,
+      addTask,
+      visibleTasks
+    ]
   );
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 export function useData() {
