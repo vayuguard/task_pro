@@ -536,8 +536,8 @@ export function createApiRouter(): Router {
     try {
       const body = req.body as Task;
       const estimate =
-        req.session!.role === 'admin' && typeof body.timeEstimated === 'number'
-          ? body.timeEstimated
+        typeof body.timeEstimated === 'number' && Number.isFinite(body.timeEstimated)
+          ? Math.max(0, body.timeEstimated)
           : 0;
       const task = normalizeTask({ ...body, timeEstimated: estimate, timingTrust: 'certified', version: 0 });
       await getDb().collection('tasks').insertOne({ ...task, updatedAt: new Date() });
