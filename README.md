@@ -10,15 +10,13 @@ cp .env.example .env   # set MONGODB_URI
 npm run dev
 ```
 
-Open [http://localhost:3100](http://localhost:3100)
-
 ## Demo Admin
 
 | Field | Value |
 |-------|-------|
-| Email | `reachus@vayuguard.com` |
-| Password | `vgctpl_ad@2022` |
-| MFA | `202208` |
+| Email |
+| Password |
+| MFA |
 
 Employees are created by admin in **Settings → Add employee** (credentials emailed or logged to console).
 
@@ -61,7 +59,7 @@ Sessions use **HTTP-only cookies**; API routes require authentication.
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Express + Vite on port 3100 |
+| `npm run dev` | Express + Vite |
 | `npm run build` | Production frontend build |
 | `npm run build:server` | Build frontend + bundle server |
 | `npm run test:smoke` | Auth, timing, business-hours smoke tests |
@@ -71,4 +69,4 @@ Sessions use **HTTP-only cookies**; API routes require authentication.
 
 - `MONGODB_URI` — MongoDB connection string (required)
 - `MONGODB_DB` — database name (default `taskpro_vg`)
-- `PORT` — server port (default `3100`)
+- `PORT` — server port 
