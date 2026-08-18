@@ -580,7 +580,7 @@ export function createApiRouter(): Router {
       const holidays = await loadHolidays();
       const now = new Date();
 
-      // Enforce single In Progress task per assignee: auto-pause others.
+      // Enforce single In Progress task per assignee: move other In Progress tasks back to To Do.
       if (status === 'In Progress') {
         const assigneeEmail = (prev.assignee.email || session.email).toLowerCase();
         const allTasks = await col.find({}).toArray();
@@ -588,14 +588,15 @@ export function createApiRouter(): Router {
           const other = normalizeTask(stripMongoId(doc) as Task);
           if (other.id === taskId) continue;
           if (other.status !== 'In Progress') continue;
-          if (other.timerPaused) continue;
           const otherEmail = (other.assignee.email || '').toLowerCase();
           if (otherEmail !== assigneeEmail) continue;
-          const paused = pauseWorkTimer(other, actor, now, exceptions);
-          const enriched = enrichTaskForClient(paused, now, exceptions, holidays);
+          const shifted = transitionTaskOnServer(other, 'To Do', actor, now, exceptions);
+          const enriched = enrichTaskForClient(shifted, now, exceptions, holidays);
           await col.updateOne({ id: other.id }, { $set: { ...enriched, updatedAt: now } });
-          await appendTaskEvent(other.id, 'timer.auto_pause', session.email, {
-            reason: `auto-paused: ${taskId} moved to In Progress`
+          await appendTaskEvent(other.id, 'transition.auto', session.email, {
+            reason: `auto-moved to To Do: ${taskId} moved to In Progress`,
+            from: 'In Progress',
+            to: 'To Do'
           });
         }
       }
@@ -765,7 +766,7 @@ export function createApiRouter(): Router {
       const holidays = await loadHolidays();
       const now = new Date();
 
-      // When resuming, auto-pause any other running In Progress task for the same assignee.
+      // When resuming, enforce only one In Progress task for the assignee.
       if (action === 'resume') {
         const assigneeEmail = (prev.assignee.email || session.email).toLowerCase();
         const allTasks = await col.find({}).toArray();
@@ -773,13 +774,14 @@ export function createApiRouter(): Router {
           const other = normalizeTask(stripMongoId(doc) as Task);
           if (other.id === prev.id) continue;
           if (other.status !== 'In Progress') continue;
-          if (other.timerPaused) continue;
           if ((other.assignee.email || '').toLowerCase() !== assigneeEmail) continue;
-          const paused = pauseWorkTimer(other, actor, now, exceptions);
-          const enriched = enrichTaskForClient(paused, now, exceptions, holidays);
+          const shifted = transitionTaskOnServer(other, 'To Do', actor, now, exceptions);
+          const enriched = enrichTaskForClient(shifted, now, exceptions, holidays);
           await col.updateOne({ id: other.id }, { $set: { ...enriched, updatedAt: now } });
-          await appendTaskEvent(other.id, 'timer.auto_pause', session.email, {
-            reason: `auto-paused: ${prev.id} timer resumed`
+          await appendTaskEvent(other.id, 'transition.auto', session.email, {
+            reason: `auto-moved to To Do: ${prev.id} timer resumed`,
+            from: 'In Progress',
+            to: 'To Do'
           });
         }
       }

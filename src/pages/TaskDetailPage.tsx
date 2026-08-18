@@ -58,6 +58,14 @@ export default function TaskDetailPage() {
     return sectionBreakdown(task, new Date(liveEnabled ? liveNow : Date.now()), holidayDates);
   }, [task, liveEnabled, liveNow, holidayDates]);
 
+  // Keep due date picker synced when navigating between tasks.
+  useEffect(() => {
+    if (!task) return;
+    const nextDue = task.dueDate && task.dueDate !== 'No due date' ? dueDateToInput(task.dueDate) : '';
+    setDueInput(nextDue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
+
   useEffect(() => {
     if (!loading && !task && !error) {
       void reload();
@@ -92,14 +100,6 @@ export default function TaskDetailPage() {
     if (unit === 'minutes') return hours * 60;
     return hours / 8;
   };
-
-  // Keep due date picker synced when navigating between tasks.
-  useEffect(() => {
-    if (!task) return;
-    const nextDue = task.dueDate && task.dueDate !== 'No due date' ? dueDateToInput(task.dueDate) : '';
-    setDueInput(nextDue);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.id]);
 
   const changeStatus = async (status: TaskStatus) => {
     if (status === task.status) return;
