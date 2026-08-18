@@ -139,7 +139,7 @@ export default function TasksPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <PriorityBadge priority={t.priority} />
                 <span className="text-xs text-ink-muted tabular-nums">{getTaskHours(t)}h</span>
-                <StatusBadge status={t.status} />
+                <StatusBadge status={t.status} paused={Boolean(t.timerPaused)} live={t.status === 'In Progress' && !t.timerPaused} />
               </div>
             </Link>
           ))}

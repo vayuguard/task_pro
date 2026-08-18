@@ -12,6 +12,7 @@ import { hashPassword, verifyPassword } from '../server/auth/password.ts';
 import { computePerformanceScore } from '../server/scoring.ts';
 import { scheduleForEmail } from '../server/scheduleExceptions.ts';
 import { pauseWorkTimer, resumeWorkTimer } from '../server/taskService.ts';
+import { estimatePartsToHours, hoursToEstimateParts } from '../src/utils/estimate.ts';
 import { Task } from '../src/types.ts';
 
 let passed = 0;
@@ -220,15 +221,15 @@ const score = computePerformanceScore(
 assert(score.overall != null || score.eligibleTasks === 0, 'scoring engine returns result');
 
 function employeePatch(body: Partial<Task>): Partial<Task> {
-  const allowed = ['title', 'description', 'labels', 'subtasks', 'attachments', 'activity', 'priority', 'dueDate'];
+  const allowed = ['title', 'description', 'labels', 'subtasks', 'attachments', 'activity', 'priority', 'dueDate', 'timeEstimated'];
   const out: Record<string, unknown> = {};
   for (const k of allowed) {
     if (k in body) out[k] = (body as Record<string, unknown>)[k];
   }
   return out as Partial<Task>;
 }
-const stripped = employeePatch({ title: 'ok', timeEstimated: 99 });
-assert(stripped.title === 'ok' && !('timeEstimated' in stripped), 'employee PUT strips estimate');
+const stripped = employeePatch({ title: 'ok', timeEstimated: 99, status: 'Done' as const });
+assert(stripped.title === 'ok' && stripped.timeEstimated === 99 && !('status' in stripped), 'employee PUT allows estimate but not status');
 
 const customSchedule = scheduleForEmail('jane@company.com', [
   { email: 'jane@company.com', startHour: 9, endHour: 17 }
@@ -260,6 +261,9 @@ const manuallyResumed = resumeWorkTimer(
 );
 assert(manuallyResumed.timerPaused === false, 'resume clears timerPaused');
 assert((manuallyResumed.statusHistory || []).some((s) => s.status === 'In Progress' && !s.endedAt), 'resume opens a new In Progress segment');
+
+assert(estimatePartsToHours({ days: 1, hours: 2, minutes: 30 }) === 10.5, 'mixed estimate 1d 2h 30m = 10.5 business hours');
+assert(hoursToEstimateParts(10.5).days === 1 && hoursToEstimateParts(10.5).hours === 2 && hoursToEstimateParts(10.5).minutes === 30, 'hours split back into mixed units');
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);

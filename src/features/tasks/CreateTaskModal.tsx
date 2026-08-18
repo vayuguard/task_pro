@@ -5,6 +5,7 @@ import { useData } from '../../context/DataContext';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { EstimateInput } from '../../components/EstimateInput';
 import { Task, TaskPriority } from '../../types';
 import { TASK_PRIORITIES } from '../../utils/priority';
 import { createInitialTiming } from '../../utils/taskTiming';
@@ -19,9 +20,7 @@ export function CreateTaskModal({ open, onClose }: { open: boolean; onClose: () 
   const [project, setProject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
-  // Stored in business-hours (hours) to match the scoring + timers.
   const [estimate, setEstimate] = useState(2);
-  const [estimateUnit, setEstimateUnit] = useState<'hours' | 'minutes' | 'days'>('hours');
   const [due, setDue] = useState('');
   const [assigneeIdx, setAssigneeIdx] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -36,22 +35,7 @@ export function CreateTaskModal({ open, onClose }: { open: boolean; onClose: () 
     setDescription('');
     setPriority('Medium');
     setEstimate(2);
-    setEstimateUnit('hours');
     setDue('');
-  };
-
-  const unitToHours = (value: number, unit: typeof estimateUnit) => {
-    if (!Number.isFinite(value)) return 0;
-    if (unit === 'hours') return value;
-    if (unit === 'minutes') return value / 60;
-    return value * 8; // default 8 business hours per day
-  };
-
-  const hoursToUnit = (hours: number, unit: typeof estimateUnit) => {
-    if (!Number.isFinite(hours)) return 0;
-    if (unit === 'hours') return hours;
-    if (unit === 'minutes') return hours * 60;
-    return hours / 8;
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -99,38 +83,15 @@ export function CreateTaskModal({ open, onClose }: { open: boolean; onClose: () 
           <label className="label">Description</label>
           <textarea className="input min-h-[80px]" value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Priority</label>
-            <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
-              {TASK_PRIORITIES.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-          <div className="col-span-1 space-y-2">
-            <Input
-              label="Estimate amount"
-              type="number"
-              min={estimateUnit === 'minutes' ? 15 : estimateUnit === 'days' ? 0.25 : 0.5}
-              step={estimateUnit === 'minutes' ? 15 : estimateUnit === 'days' ? 0.25 : 0.5}
-              value={hoursToUnit(estimate, estimateUnit)}
-              onChange={(e) => {
-                const raw = parseFloat(e.target.value);
-                if (Number.isNaN(raw)) return;
-                setEstimate(unitToHours(raw, estimateUnit));
-              }}
-            />
-            <div className="space-y-1">
-              <label className="label">Unit</label>
-              <select className="input" value={estimateUnit} onChange={(e) => setEstimateUnit(e.target.value as typeof estimateUnit)}>
-                <option value="hours">Hours</option>
-                <option value="minutes">Minutes</option>
-                <option value="days">Days</option>
-              </select>
-            </div>
-          </div>
+        <div>
+          <label className="label">Priority</label>
+          <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
+            {TASK_PRIORITIES.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
         </div>
+        <EstimateInput hours={estimate} onChange={setEstimate} />
         <Input label="Due date" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
         {canAssign && teamMembers.length > 0 && (
           <div>

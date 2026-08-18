@@ -111,21 +111,21 @@ export async function apiTransitionTask(
   taskId: string,
   status: TaskStatus,
   expectedVersion?: number
-): Promise<{ ok: true; task: Task }> {
+): Promise<{ ok: true; task: Task; affected?: Task[] }> {
   return request(`/tasks/${encodeURIComponent(taskId)}/transition`, {
     method: 'POST',
     body: JSON.stringify({ status, expectedVersion })
   });
 }
 
-export async function apiPauseTimer(taskId: string): Promise<{ ok: true; task: Task }> {
+export async function apiPauseTimer(taskId: string): Promise<{ ok: true; task: Task; affected?: Task[] }> {
   return request(`/tasks/${encodeURIComponent(taskId)}/timer`, {
     method: 'POST',
     body: JSON.stringify({ action: 'pause' })
   });
 }
 
-export async function apiResumeTimer(taskId: string): Promise<{ ok: true; task: Task }> {
+export async function apiResumeTimer(taskId: string): Promise<{ ok: true; task: Task; affected?: Task[] }> {
   return request(`/tasks/${encodeURIComponent(taskId)}/timer`, {
     method: 'POST',
     body: JSON.stringify({ action: 'resume' })
@@ -135,7 +135,7 @@ export async function apiResumeTimer(taskId: string): Promise<{ ok: true; task: 
 export async function apiReviewTask(
   taskId: string,
   outcome: 'accepted' | 'changes_requested'
-): Promise<{ ok: true; task: Task }> {
+): Promise<{ ok: true; task: Task; affected?: Task[] }> {
   return request(`/tasks/${encodeURIComponent(taskId)}/review`, {
     method: 'POST',
     body: JSON.stringify({ outcome })

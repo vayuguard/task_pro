@@ -111,6 +111,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
   }, []);
 
+  const replaceTasks = useCallback((next: Task[]) => {
+    if (next.length === 0) return;
+    const byId = new Map(next.map((t) => [t.id, t]));
+    setTasks((prev) => prev.map((t) => byId.get(t.id) ?? t));
+  }, []);
+
   const updateTask = useCallback(
     async (task: Task, meta?: { estimateReason?: string }) => {
       try {
@@ -129,7 +135,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (taskId: string, status: TaskStatus, version?: number) => {
       try {
         const res = await apiTransitionTask(taskId, status, version);
-        replaceTask(res.task);
+        replaceTasks([res.task, ...(res.affected || [])]);
         if (res.task.status === 'Done') celebrate(44);
         return res.task;
       } catch (err) {
@@ -137,14 +143,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [replaceTask, toast]
+    [replaceTasks, toast]
   );
 
   const pauseTimer = useCallback(
     async (taskId: string) => {
       try {
         const res = await apiPauseTimer(taskId);
-        replaceTask(res.task);
+        replaceTasks([res.task, ...(res.affected || [])]);
         toast('Timer paused', 'success');
         return res.task;
       } catch (err) {
@@ -152,14 +158,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [replaceTask, toast]
+    [replaceTasks, toast]
   );
 
   const resumeTimer = useCallback(
     async (taskId: string) => {
       try {
         const res = await apiResumeTimer(taskId);
-        replaceTask(res.task);
+        replaceTasks([res.task, ...(res.affected || [])]);
         toast('Timer resumed', 'success');
         return res.task;
       } catch (err) {
@@ -167,14 +173,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [replaceTask, toast]
+    [replaceTasks, toast]
   );
 
   const reviewTask = useCallback(
     async (taskId: string, outcome: 'accepted' | 'changes_requested') => {
       try {
         const res = await apiReviewTask(taskId, outcome);
-        replaceTask(res.task);
+        replaceTasks([res.task, ...(res.affected || [])]);
         if (res.task.status === 'Done') celebrate(44);
         toast(outcome === 'accepted' ? 'Review accepted' : 'Changes requested', 'success');
         return res.task;
@@ -183,7 +189,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [replaceTask, toast]
+    [replaceTasks, toast]
   );
 
   const archiveTask = useCallback(

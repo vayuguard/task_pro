@@ -12,11 +12,11 @@ import { TaskStatus, Subtask } from '../types';
 import { canAssignToOthers } from '../auth/auth';
 import { getTaskHours, getTaskWallHours } from '../utils/taskDisplay';
 import { dueDateFromInput, dueDateToInput, formatDayLabelIST, formatTimeIST, nowTimestamp } from '../utils/time';
-import { sectionBreakdown, getWorkingHours } from '../utils/taskTiming';
+import { sectionBreakdown, getWorkingHours, isWorkTimerRunning } from '../utils/taskTiming';
 import { Tabs } from '../components/ui/Tabs';
 import { useLiveTick } from '../hooks/useLiveTick';
 import { isWithinBusinessHours, nextBusinessStart } from '../utils/businessTime';
-import { isWorkTimerRunning } from '../utils/taskTiming';
+import { EstimateInput } from '../components/EstimateInput';
 
 const statuses: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
 
@@ -29,7 +29,6 @@ export default function TaskDetailPage() {
   const [comment, setComment] = useState('');
   const [estimateDraft, setEstimateDraft] = useState<number | null>(null);
   const [estimateReason, setEstimateReason] = useState('');
-  const [estimateUnit, setEstimateUnit] = useState<'hours' | 'minutes' | 'days'>('hours');
   const [dueInput, setDueInput] = useState<string>('');
   const [newSubtask, setNewSubtask] = useState('');
   const isAdmin = session?.role === 'admin';
@@ -87,22 +86,11 @@ export default function TaskDetailPage() {
     task.dueDate && task.dueDate !== 'No due date' ? dueDateToInput(task.dueDate) : '';
   const dueChanged = isAdmin && dueInput !== currentDueInput;
 
-  const unitToHours = (value: number, unit: typeof estimateUnit) => {
-    if (!Number.isFinite(value)) return 0;
-    if (unit === 'hours') return value;
-    if (unit === 'minutes') return value / 60;
-    return value * 8; // default 8 business hours per day
-  };
-
-  const hoursToUnit = (hours: number, unit: typeof estimateUnit) => {
-    if (!Number.isFinite(hours)) return 0;
-    if (unit === 'hours') return hours;
-    if (unit === 'minutes') return hours * 60;
-    return hours / 8;
-  };
-
   const changeStatus = async (status: TaskStatus) => {
-    if (status === task.status) return;
+    if (status === task.status) {
+      if (status === 'In Progress' && task.timerPaused) await resumeTimer(task.id);
+      return;
+    }
     await transitionTask(task.id, status, task.version);
   };
 
@@ -288,7 +276,7 @@ export default function TaskDetailPage() {
         <div className="space-y-4">
           <div className="panel p-4 space-y-3">
             <div className="flex flex-wrap gap-2">
-              <StatusBadge status={task.status} />
+              <StatusBadge status={task.status} live={isWorkTimerRunning(task)} paused={Boolean(task.timerPaused)} />
               <PriorityBadge priority={task.priority} />
               {task.timingTrust === 'legacy' && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Legacy timing</span>
@@ -377,47 +365,28 @@ export default function TaskDetailPage() {
                     </div>
                   </div>
                 )}
-                {isAdmin ? (
-                  <div className="space-y-2">
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <Input
-                        label="Estimate amount"
-                        type="number"
-                        step={estimateUnit === 'minutes' ? 15 : estimateUnit === 'days' ? 0.25 : 0.5}
-                        min={estimateUnit === 'minutes' ? 15 : estimateUnit === 'days' ? 0.25 : 0.5}
-                        value={hoursToUnit(estimateValue, estimateUnit)}
-                        onChange={(e) => {
-                          const raw = parseFloat(e.target.value);
-                          if (Number.isNaN(raw)) return setEstimateDraft(null);
-                          setEstimateDraft(unitToHours(raw, estimateUnit));
-                        }}
-                      />
-                      <div className="space-y-1">
-                        <label className="label">Unit</label>
-                        <select className="input" value={estimateUnit} onChange={(e) => setEstimateUnit(e.target.value as typeof estimateUnit)}>
-                          <option value="hours">Hours</option>
-                          <option value="minutes">Minutes</option>
-                          <option value="days">Days</option>
-                        </select>
-                      </div>
-                    </div>
+                <div className="space-y-2">
+                    <EstimateInput hours={estimateValue} onChange={setEstimateDraft} />
                     {estimateChanged && (
                       <>
-                        <Input
-                          label="Reason for change"
-                          value={estimateReason}
-                          onChange={(e) => setEstimateReason(e.target.value)}
-                          required
-                        />
-                        <Button type="button" onClick={saveEstimate} disabled={!estimateReason.trim()}>
+                        {isAdmin && (
+                          <Input
+                            label="Reason for change"
+                            value={estimateReason}
+                            onChange={(e) => setEstimateReason(e.target.value)}
+                            required
+                          />
+                        )}
+                        <Button
+                          type="button"
+                          onClick={saveEstimate}
+                          disabled={isAdmin && !estimateReason.trim()}
+                        >
                           Save estimate
                         </Button>
                       </>
                     )}
                   </div>
-                ) : (
-                  <p className="text-lg font-bold">{task.timeEstimated}h</p>
-                )}
               </div>
               <div>
                 <p className="label">Spent (business)</p>

@@ -57,14 +57,17 @@ export default function HomePage() {
   const groups = useMemo(() => {
     const open = visibleTasks.filter((t) => t.status !== 'Done');
     const done = visibleTasks.filter((t) => t.status === 'Done');
-    const inProgress = visibleTasks.filter((t) => t.status === 'In Progress');
+    const inProgress = visibleTasks.filter((t) => t.status === 'In Progress' && !t.timerPaused);
     const overdue = open.filter((t) => isOverdue(t.dueDate, nowMs));
     return { open, done, inProgress, overdue };
   }, [visibleTasks, nowMs]);
 
   const statusCounts = useMemo(() => {
     const counts = { 'To Do': 0, 'In Progress': 0, Review: 0, Done: 0 } as Record<TaskStatus, number>;
-    for (const t of visibleTasks) counts[t.status] += 1;
+    for (const t of visibleTasks) {
+      if (t.status === 'In Progress' && t.timerPaused) continue;
+      counts[t.status] += 1;
+    }
     return counts;
   }, [visibleTasks]);
 
@@ -92,7 +95,7 @@ export default function HomePage() {
         totals.get(email) ||
         { email, name: t.assignee.name, avatar: t.assignee.avatar, tasks: 0, inProgress: 0, businessHours: 0 };
       existing.tasks += 1;
-      if (t.status === 'In Progress') existing.inProgress += 1;
+      if (t.status === 'In Progress' && !t.timerPaused) existing.inProgress += 1;
       existing.businessHours += getTaskHours(t);
       totals.set(email, existing);
     }

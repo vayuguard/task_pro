@@ -28,21 +28,33 @@ export function PriorityBadge({ priority, showIcon = true }: { priority: TaskPri
   );
 }
 
-export function StatusBadge({ status, live = false }: { status: TaskStatus; live?: boolean }) {
-  const s = statusStyles[status];
+export function StatusBadge({
+  status,
+  live = false,
+  paused = false
+}: {
+  status: TaskStatus;
+  live?: boolean;
+  paused?: boolean;
+}) {
+  const label = paused && status === 'In Progress' ? 'Paused' : status;
+  const s =
+    paused && status === 'In Progress'
+      ? { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' }
+      : statusStyles[status];
   return (
     <span
       className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap"
       style={{ backgroundColor: s.bg, color: s.fg }}
     >
-      {live && status === 'In Progress' && (
+      {live && status === 'In Progress' && !paused && (
         <span
           className="w-1.5 h-1.5 rounded-full live-dot"
           style={{ backgroundColor: s.fg }}
           aria-hidden
         />
       )}
-      {status}
+      {label}
     </span>
   );
 }
