@@ -15,6 +15,7 @@ import { buildTimesheet } from './timesheet.ts';
 import { isPastLoginWindow, isPastWorkHours } from './istTime.ts';
 import { patchSessionGeo } from './auth/session.ts';
 import { withPlaceName } from './geo.ts';
+import { applyPresenceSample, getOfficeFence, saveOfficeFence } from './office.ts';
 
 function stripMongoId<T extends Record<string, unknown>>(doc: T | null): Omit<T, '_id'> | null {
   if (!doc) return null;
@@ -189,6 +190,12 @@ export function createApiRouter(): Router {
       };
       void getDb().collection('login_log').insertOne(loginRecord).catch(() => {});
       void patchSessionGeo(serverSession.id, loginIp).catch(() => {});
+      void applyPresenceSample({
+        session: serverSession,
+        location: enterLocation,
+        ip: loginIp,
+        emit: false
+      }).catch(() => {});
 
       res.json({
         ok: true,
@@ -268,6 +275,12 @@ export function createApiRouter(): Router {
           { $set: { exitAt: new Date(), exitIp: logoutIp, exitLocation } }
         )
         .catch(() => {});
+      void applyPresenceSample({
+        session,
+        location: exitLocation,
+        ip: logoutIp,
+        emit: true
+      }).catch(() => {});
     }
     await destroySession(req, res);
     res.json({ ok: true });
@@ -1061,6 +1074,98 @@ export function createApiRouter(): Router {
           exitAt: d.exitAt || null,
           exitIp: String(d.exitIp || ''),
           exitLocation
+        });
+      }
+      res.json({ ok: true, entries });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.post('/presence', requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const { location } = (req.body || {}) as {
+        location?: { lat?: number; lng?: number; accuracy?: number };
+      };
+      const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+      const result = await applyPresenceSample({
+        session: req.session!,
+        location: location || null,
+        ip,
+        emit: true
+      });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/office', requireAuth, requireAdmin, async (_req, res: Response) => {
+    try {
+      const office = await getOfficeFence();
+      res.json({ ok: true, office });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.put('/office', requireAuth, requireAdmin, async (req: AuthedRequest, res: Response) => {
+    try {
+      const { lat, lng, radiusM, label } = req.body as {
+        lat?: number;
+        lng?: number;
+        radiusM?: number;
+        label?: string;
+      };
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        res.status(400).json({ ok: false, error: 'Office latitude and longitude are required.' });
+        return;
+      }
+      const office = await saveOfficeFence({
+        lat,
+        lng,
+        radiusM: typeof radiusM === 'number' ? radiusM : 150,
+        label: typeof label === 'string' ? label : 'Office'
+      });
+      await appendAudit(
+        { email: req.session!.email, role: req.session!.role },
+        'office.update',
+        office.label,
+        { lat: office.lat, lng: office.lng, radiusM: office.radiusM }
+      );
+      res.json({ ok: true, office });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.get('/office-log', requireAuth, requireAdmin, async (req, res: Response) => {
+    try {
+      const limit = Math.min(300, Math.max(10, Number(req.query.limit) || 100));
+      const docs = await getDb()
+        .collection('location_events')
+        .find({})
+        .sort({ at: -1 })
+        .limit(limit)
+        .toArray();
+      const entries = [];
+      for (const d of docs) {
+        const location = await withPlaceName(d.location as { lat?: number; lng?: number; label?: string } | null);
+        if (location?.label && !(d.location as { label?: string } | null)?.label) {
+          void getDb().collection('location_events').updateOne({ _id: d._id }, { $set: { location } });
+        }
+        entries.push({
+          id: String(d.id || d._id),
+          kind: d.kind === 'office_leave' ? 'office_leave' : 'office_enter',
+          email: String(d.email || ''),
+          name: String(d.name || ''),
+          at: d.at,
+          ip: String(d.ip || ''),
+          location,
+          distanceM: typeof d.distanceM === 'number' ? d.distanceM : null,
+          officeLabel: String(d.officeLabel || 'Office')
         });
       }
       res.json({ ok: true, entries });

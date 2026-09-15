@@ -27,6 +27,11 @@ export default function MfaPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-md panel p-6">
+        <img
+          src="/Team_Task_Pro.png"
+          alt="TaskPro"
+          className="h-12 w-12 rounded-xl object-contain mb-4"
+        />
         <h1 className="font-display text-xl font-semibold">Verify your identity</h1>
         <p className="text-sm text-ink-muted mt-1">Enter the 6-digit code for {session?.email}</p>
         <form onSubmit={onSubmit} className="mt-6 space-y-4">

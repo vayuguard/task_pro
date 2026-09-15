@@ -14,6 +14,8 @@ import {
   apiChangePassword,
   apiCreateHoliday,
   apiDeleteHoliday,
+  apiGetOffice,
+  apiSaveOffice,
   type ScheduleExceptionDto
 } from '../api/client';
 import { PageHeader, Panel } from '../components/ui/Panel';
@@ -39,11 +41,29 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayName, setHolidayName] = useState('');
+  const [officeLabel, setOfficeLabel] = useState('Office');
+  const [officeLat, setOfficeLat] = useState('');
+  const [officeLng, setOfficeLng] = useState('');
+  const [officeRadius, setOfficeRadius] = useState('150');
+  const [officeSaved, setOfficeSaved] = useState(false);
 
   const load = () => {
     if (!isAdmin) return;
     apiListEmployees().then((r) => setEmployees(r.employees));
     apiListScheduleExceptions().then((r) => setExceptions(r.exceptions)).catch(() => {});
+    apiGetOffice()
+      .then((r) => {
+        if (!r.office) {
+          setOfficeSaved(false);
+          return;
+        }
+        setOfficeSaved(true);
+        setOfficeLabel(r.office.label);
+        setOfficeLat(String(r.office.lat));
+        setOfficeLng(String(r.office.lng));
+        setOfficeRadius(String(r.office.radiusM));
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -150,6 +170,72 @@ export default function SettingsPage() {
       </Panel>
       {isAdmin && (
         <>
+          <Panel>
+            <h2 className="text-sm font-semibold mb-2">Office location</h2>
+            <p className="text-xs text-ink-muted mb-4">
+              Enter/leave records are written when someone crosses this fence during the day — not only at login or logout.
+            </p>
+            {officeSaved ? (
+              <p className="text-xs text-accent mb-3">Fence is active. Presence is tracked while people are logged in.</p>
+            ) : (
+              <p className="text-xs text-ink-faint mb-3">No office pin yet. Save coordinates to start tracking arrivals and departures.</p>
+            )}
+            <form
+              className="space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const lat = Number(officeLat);
+                const lng = Number(officeLng);
+                const radiusM = Number(officeRadius);
+                try {
+                  await apiSaveOffice({ lat, lng, radiusM, label: officeLabel });
+                  toast('Office location saved', 'success');
+                  setOfficeSaved(true);
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : 'Could not save office location', 'error');
+                }
+              }}
+            >
+              <Input label="Name" value={officeLabel} onChange={(e) => setOfficeLabel(e.target.value)} required />
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Input label="Latitude" value={officeLat} onChange={(e) => setOfficeLat(e.target.value)} required />
+                <Input label="Longitude" value={officeLng} onChange={(e) => setOfficeLng(e.target.value)} required />
+              </div>
+              <Input
+                label="Radius (meters)"
+                type="number"
+                min={30}
+                max={2000}
+                value={officeRadius}
+                onChange={(e) => setOfficeRadius(e.target.value)}
+                required
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit">Save office fence</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    if (!navigator.geolocation) {
+                      toast('Location is not available in this browser', 'error');
+                      return;
+                    }
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        setOfficeLat(String(pos.coords.latitude));
+                        setOfficeLng(String(pos.coords.longitude));
+                        toast('Filled from your current position', 'success');
+                      },
+                      () => toast('Could not read current position', 'error'),
+                      { enableHighAccuracy: true, timeout: 12_000 }
+                    );
+                  }}
+                >
+                  Use my current location
+                </Button>
+              </div>
+            </form>
+          </Panel>
           <Panel>
             <h2 className="text-sm font-semibold mb-4">Add employee</h2>
             <form onSubmit={createEmployee} className="space-y-3">

@@ -9,6 +9,7 @@ import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { CreateTaskModal } from '../../features/tasks/CreateTaskModal';
 import { apiGetNotifications } from '../../api/client';
+import { OfficePresence } from './OfficePresence';
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: 'dashboard' },
@@ -121,6 +122,7 @@ export const AppLayout = memo(function AppLayout() {
 
   return (
     <div className="min-h-screen flex">
+      <OfficePresence />
       {sidebarOpen && (
         <button
           type="button"
@@ -135,11 +137,20 @@ export const AppLayout = memo(function AppLayout() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className={`p-5 border-b sidebar-divider ${sidebarCollapsed ? 'text-center' : ''}`}>
-          <p className="font-display text-xl font-semibold tracking-tight truncate">
-            {sidebarCollapsed ? 'TP' : 'TaskPro'}
-          </p>
-          {!sidebarCollapsed && <p className="text-xs sidebar-muted mt-0.5">Work management</p>}
+        <div className={`p-5 border-b sidebar-divider ${sidebarCollapsed ? 'text-center px-2' : ''}`}>
+          <div className={`flex items-center gap-2.5 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+            <img
+              src="/Team_Task_Pro.png"
+              alt=""
+              className={`rounded-lg object-contain shrink-0 ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'}`}
+            />
+            {!sidebarCollapsed && (
+              <div className="min-w-0">
+                <p className="font-display text-xl font-semibold tracking-tight truncate">TaskPro</p>
+                <p className="text-xs sidebar-muted mt-0.5">Work management</p>
+              </div>
+            )}
+          </div>
         </div>
 
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto custom-scrollbar">

@@ -223,6 +223,48 @@ export async function apiGetLoginLog(limit = 50): Promise<{
   return request(`/login-log?limit=${limit}`);
 }
 
+export async function apiPresencePing(location: GeoPoint): Promise<{
+  ok: true;
+  tracked: boolean;
+  inside: boolean | null;
+  event: 'office_enter' | 'office_leave' | null;
+}> {
+  return request('/presence', { method: 'POST', body: JSON.stringify({ location }) });
+}
+
+export async function apiGetOffice(): Promise<{
+  ok: true;
+  office: { lat: number; lng: number; radiusM: number; label: string } | null;
+}> {
+  return request('/office');
+}
+
+export async function apiSaveOffice(office: {
+  lat: number;
+  lng: number;
+  radiusM: number;
+  label: string;
+}): Promise<{ ok: true; office: { lat: number; lng: number; radiusM: number; label: string } }> {
+  return request('/office', { method: 'PUT', body: JSON.stringify(office) });
+}
+
+export async function apiGetOfficeLog(limit = 100): Promise<{
+  ok: true;
+  entries: Array<{
+    id: string;
+    kind: 'office_enter' | 'office_leave';
+    email: string;
+    name: string;
+    at: string;
+    ip: string;
+    location: GeoPoint | null;
+    distanceM: number | null;
+    officeLabel: string;
+  }>;
+}> {
+  return request(`/office-log?limit=${limit}`);
+}
+
 export async function apiGetPerformance(
   period = '30d',
   userId?: string

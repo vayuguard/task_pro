@@ -50,7 +50,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="font-display text-3xl font-semibold text-ink">TaskPro</h1>
+          <img
+            src="/Team_Task_Pro.png"
+            alt="TaskPro"
+            className="mx-auto h-16 w-16 rounded-2xl object-contain shadow-sm"
+          />
+          <h1 className="font-display text-3xl font-semibold text-ink mt-4">TaskPro</h1>
           <p className="text-sm text-ink-muted mt-2">Sign in to your workspace</p>
         </div>
         <form onSubmit={onSubmit} className="panel p-6 space-y-4">
