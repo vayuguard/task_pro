@@ -14,6 +14,7 @@ import { scheduleForEmail } from '../server/scheduleExceptions.ts';
 import { pauseWorkTimer, resumeWorkTimer } from '../server/taskService.ts';
 import { estimatePartsToHours, hoursToEstimateParts } from '../src/utils/estimate.ts';
 import { haversineMeters } from '../server/geo.ts';
+import { isEmployeeLoginAllowed, isPastLoginWindow, employeeLoginBlockedMessage } from '../server/istTime.ts';
 import { Task } from '../src/types.ts';
 
 let passed = 0;
@@ -268,6 +269,24 @@ assert(hoursToEstimateParts(10.5).days === 1 && hoursToEstimateParts(10.5).hours
 
 const officeMeters = haversineMeters({ lat: 23.0225, lng: 72.5714 }, { lat: 23.0234, lng: 72.5714 });
 assert(officeMeters > 90 && officeMeters < 110, 'haversine ~100m north of Ahmedabad sample point');
+
+// Login windows: 9:00–10:00 and 13:30–14:30 IST (UTC = IST−5:30)
+assert(isEmployeeLoginAllowed(new Date('2026-09-16T03:30:00.000Z')), '9:00 AM IST is allowed');
+assert(isEmployeeLoginAllowed(new Date('2026-09-16T04:29:00.000Z')), '9:59 AM IST is allowed');
+assert(isPastLoginWindow(new Date('2026-09-16T04:30:00.000Z')), '10:00 AM IST is blocked');
+assert(isPastLoginWindow(new Date('2026-09-16T07:00:00.000Z')), '12:30 PM IST is blocked');
+assert(isEmployeeLoginAllowed(new Date('2026-09-16T08:00:00.000Z')), '1:30 PM IST is allowed');
+assert(isEmployeeLoginAllowed(new Date('2026-09-16T08:59:00.000Z')), '2:29 PM IST is allowed');
+assert(isPastLoginWindow(new Date('2026-09-16T09:00:00.000Z')), '2:30 PM IST is blocked');
+assert(isPastLoginWindow(new Date('2026-09-16T02:59:00.000Z')), '8:59 AM IST is blocked');
+assert(
+  employeeLoginBlockedMessage(new Date('2026-09-16T05:00:00.000Z')).includes('1:30 PM'),
+  'midday block points to afternoon window'
+);
+assert(
+  employeeLoginBlockedMessage(new Date('2026-09-16T10:00:00.000Z')).includes('tomorrow 9:00'),
+  'evening block points to next morning'
+);
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);

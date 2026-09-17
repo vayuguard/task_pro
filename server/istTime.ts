@@ -23,29 +23,41 @@ export function getIstHour(date: Date = new Date()): { hour: number; minute: num
   };
 }
 
-/**
- * Employee login break window.
- * Rule:
- * - can login before 10:30 AM IST
- * - if not, cannot login until 12:30 PM IST
- */
-export function isPastLoginWindow(date: Date = new Date()): boolean {
+function istMinutes(date: Date = new Date()): number {
   const { hour, minute } = getIstHour(date);
+  return hour * 60 + minute;
+}
 
-  // Allowed: before 10:30
-  if (hour < 10) return false;
-  if (hour === 10 && minute < 30) return false;
-
-  // Blocked: 10:30 <= time < 12:30
-  if (hour === 10 && minute >= 30) return true;
-  if (hour === 11) return true;
-  if (hour === 12 && minute < 30) return true;
-
-  // Allowed: 12:30 onwards (but still blocked by separate 6 PM rule)
+/**
+ * Employee login windows (IST):
+ * - 9:00 AM – 10:00 AM
+ * - 1:30 PM – 2:30 PM
+ * Outside these windows only admin may log in.
+ */
+export function isEmployeeLoginAllowed(date: Date = new Date()): boolean {
+  const mins = istMinutes(date);
+  if (mins >= 9 * 60 && mins < 10 * 60) return true;
+  if (mins >= 13 * 60 + 30 && mins < 14 * 60 + 30) return true;
   return false;
 }
 
-/** True if IST time is at or after 6 PM. */
+/** True when employees are outside both login windows. */
+export function isPastLoginWindow(date: Date = new Date()): boolean {
+  return !isEmployeeLoginAllowed(date);
+}
+
+export function employeeLoginBlockedMessage(date: Date = new Date()): string {
+  const mins = istMinutes(date);
+  if (mins < 9 * 60) {
+    return 'Login opens at 9:00 AM IST. Please try again then.';
+  }
+  if (mins >= 10 * 60 && mins < 13 * 60 + 30) {
+    return 'Morning login closed at 10:00 AM IST. Next window is 1:30 PM–2:30 PM IST.';
+  }
+  return 'Login closed after 2:30 PM IST. Next window is tomorrow 9:00 AM–10:00 AM IST.';
+}
+
+/** True if IST time is at or after 6 PM (session auto-logout). */
 export function isPastWorkHours(date: Date = new Date()): boolean {
   const { hour } = getIstHour(date);
   return hour >= 18;

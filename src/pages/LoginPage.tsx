@@ -57,6 +57,9 @@ export default function LoginPage() {
           />
           <h1 className="font-display text-3xl font-semibold text-ink mt-4">TaskPro</h1>
           <p className="text-sm text-ink-muted mt-2">Sign in to your workspace</p>
+          <p className="text-xs text-ink-faint mt-2">
+            Employee login: 9:00–10:00 AM and 1:30–2:30 PM IST
+          </p>
         </div>
         <form onSubmit={onSubmit} className="panel p-6 space-y-4">
           {error && (

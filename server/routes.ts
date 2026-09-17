@@ -12,7 +12,7 @@ import type { ScheduleExceptionDoc } from './scheduleExceptions.ts';
 import type { Task, TaskStatus } from '../src/types.ts';
 import { formatTimeIST, formatIsoDateIST } from '../src/utils/time.ts';
 import { buildTimesheet } from './timesheet.ts';
-import { isPastLoginWindow, isPastWorkHours } from './istTime.ts';
+import { isPastLoginWindow, employeeLoginBlockedMessage } from './istTime.ts';
 import { patchSessionGeo } from './auth/session.ts';
 import { withPlaceName } from './geo.ts';
 import { applyPresenceSample, getOfficeFence, saveOfficeFence } from './office.ts';
@@ -122,16 +122,13 @@ export function createApiRouter(): Router {
         return;
       }
 
-      // Employees have a split login window:
-      // - can login before 10:30 AM IST
-      // - if not, cannot login until 12:30 PM IST
+      // Employees may only log in during:
+      // - 9:00–10:00 AM IST
+      // - 1:30–2:30 PM IST
+      // Admin can log in any time.
       if (account.role === 'employee') {
-        if (isPastWorkHours()) {
-          res.status(403).json({ ok: false, error: 'Work hours ended at 6:00 PM IST. Login is not available until tomorrow 10:30 AM.' });
-          return;
-        }
         if (isPastLoginWindow()) {
-          res.status(403).json({ ok: false, error: 'Login window closed between 10:30 AM and 12:30 PM IST. Please try again at 12:30 PM.' });
+          res.status(403).json({ ok: false, error: employeeLoginBlockedMessage() });
           return;
         }
         if (
