@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { apiGetAttendance } from '../api/client';
-import { PageHeader, Panel } from '../components/ui/Panel';
+import { PageHeader } from '../components/ui/Panel';
 import { PageLoading } from '../components/ui/Skeleton';
 import { DateCalendar } from '../components/ui/DateCalendar';
 import { formatTimeIST, nowTimestamp } from '../utils/time';
@@ -33,6 +33,16 @@ function fmtClock(value: string | null) {
   return formatTimeIST(d);
 }
 
+function Field({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-sunken/40 px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-ink-faint">{label}</p>
+      <p className="text-sm font-medium text-ink mt-0.5 break-words">{value}</p>
+      {hint ? <p className="text-[11px] text-ink-faint mt-0.5">{hint}</p> : null}
+    </div>
+  );
+}
+
 export default function AttendancePage() {
   const { session } = useAuth();
   const isAdmin = session?.role === 'admin';
@@ -41,6 +51,8 @@ export default function AttendancePage() {
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [dayFilter, setDayFilter] = useState('all');
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const popRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     apiGetAttendance(45)
@@ -48,6 +60,22 @@ export default function AttendancePage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load attendance'))
       .finally(() => setLoading(false));
   }, [session?.userId]);
+
+  useEffect(() => {
+    if (!calendarOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) setCalendarOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCalendarOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [calendarOpen]);
 
   const employees = useMemo(() => {
     const map = new Map<string, string>();
@@ -65,10 +93,12 @@ export default function AttendancePage() {
     });
   }, [rows, employeeFilter, dayFilter]);
 
+  const dateLabel = dayFilter === 'all' ? 'All dates' : dayFilter;
+
   if (loading) return <PageLoading />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl">
       <PageHeader
         title="Attendance"
         subtitle={
@@ -79,76 +109,88 @@ export default function AttendancePage() {
       />
       {error && <p className="text-sm text-danger">{error}</p>}
 
-      <div className="grid lg:grid-cols-[280px_1fr] gap-4 items-start">
-        <div className="space-y-3">
-          {isAdmin && (
-            <label className="block text-xs font-semibold text-ink-muted">
-              Employee
-              <select
-                className="input mt-1.5"
-                value={employeeFilter}
-                onChange={(e) => setEmployeeFilter(e.target.value)}
-              >
-                <option value="all">All employees</option>
-                {employees.map(([email, name]) => (
-                  <option key={email} value={email}>
-                    {name} ({email})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <div>
-            <p className="text-xs font-semibold text-ink-muted mb-1.5">
-              Date {dayFilter !== 'all' ? `· ${dayFilter}` : '· all'}
-            </p>
-            <DateCalendar value={dayFilter} onChange={setDayFilter} markedDays={markedDays} />
-          </div>
-        </div>
+      <div className="flex flex-wrap gap-3 items-end">
+        {isAdmin && (
+          <label className="block text-xs font-semibold text-ink-muted min-w-[12rem] flex-1">
+            Employee
+            <select
+              className="input mt-1.5"
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+            >
+              <option value="all">All employees</option>
+              {employees.map(([email, name]) => (
+                <option key={email} value={email}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-        <Panel padded={false} className="panel-3d overflow-hidden">
-          {filtered.length === 0 ? (
-            <p className="p-4 text-sm text-ink-muted">No attendance records for this filter.</p>
-          ) : (
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-sm min-w-[960px] table-3d">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Email</th>
-                    <th className="p-3">Login time</th>
-                    <th className="p-3">Login location</th>
-                    <th className="p-3">Office enter</th>
-                    <th className="p-3">Logout / auto-logout</th>
-                    <th className="p-3">Office leave</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r) => (
-                    <tr key={r.id} className="row-3d">
-                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{r.date}</td>
-                      <td className="p-3 font-medium whitespace-nowrap cell-3d">{r.name}</td>
-                      <td className="p-3 text-ink-muted text-xs cell-3d">{r.email}</td>
-                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">
-                        <div>{fmtWhen(r.loginAt)}</div>
-                        <div className="text-[11px] text-ink-faint">{fmtClock(r.loginAt)}</div>
-                      </td>
-                      <td className="p-3 text-xs text-ink-muted max-w-[16rem] cell-3d">
-                        {r.loginLocation?.label ||
-                          (r.locationStatus === 'unavailable' ? 'Not recorded' : '—')}
-                      </td>
-                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{fmtWhen(r.officeEnterAt)}</td>
-                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{fmtWhen(r.logoutAt)}</td>
-                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{fmtWhen(r.officeLeaveAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="relative" ref={popRef}>
+          <p className="text-xs font-semibold text-ink-muted mb-1.5">Date</p>
+          <button
+            type="button"
+            className="btn btn-secondary min-w-[11rem] justify-between gap-3"
+            onClick={() => setCalendarOpen((v) => !v)}
+            aria-expanded={calendarOpen}
+          >
+            <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+            <span className="flex-1 text-left">{dateLabel}</span>
+            <span className="material-symbols-outlined text-[18px]">
+              {calendarOpen ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+          {calendarOpen && (
+            <div className="absolute left-0 top-full mt-2 z-40 shadow-float">
+              <DateCalendar
+                value={dayFilter}
+                markedDays={markedDays}
+                onChange={(next) => {
+                  setDayFilter(next);
+                  setCalendarOpen(false);
+                }}
+              />
             </div>
           )}
-        </Panel>
+        </div>
       </div>
+
+      {filtered.length === 0 ? (
+        <div className="panel panel-3d p-6">
+          <p className="text-sm text-ink-muted">No attendance records for this filter.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((r) => (
+            <article key={r.id} className="panel panel-3d p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">{r.name}</p>
+                  <p className="text-xs text-ink-muted break-all">{r.email}</p>
+                </div>
+                <span className="chip chip-active pointer-events-none">{r.date}</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Field label="Login time" value={fmtWhen(r.loginAt)} hint={fmtClock(r.loginAt)} />
+                <Field label="Logout / auto-logout" value={fmtWhen(r.logoutAt)} hint={fmtClock(r.logoutAt)} />
+                <Field label="Office enter" value={fmtWhen(r.officeEnterAt)} hint={fmtClock(r.officeEnterAt)} />
+                <Field label="Office leave" value={fmtWhen(r.officeLeaveAt)} hint={fmtClock(r.officeLeaveAt)} />
+              </div>
+              <div className="mt-2">
+                <Field
+                  label="Login location"
+                  value={
+                    r.loginLocation?.label ||
+                    (r.locationStatus === 'unavailable' ? 'Not recorded' : '—')
+                  }
+                />
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
