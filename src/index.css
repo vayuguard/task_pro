@@ -272,6 +272,21 @@
       0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
+  /* Native <select> popups inherit page text color; force readable option contrast */
+  select.input {
+    color-scheme: inherit;
+  }
+  select.input option,
+  select.input optgroup {
+    background-color: var(--surface-raised);
+    color: var(--ink);
+  }
+  .dark select.input option,
+  .dark select.input optgroup {
+    background-color: #101827;
+    color: #e9eef7;
+  }
+
   .label {
     @apply block text-xs font-semibold mb-1.5;
     color: var(--ink-muted);

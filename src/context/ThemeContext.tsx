@@ -40,7 +40,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const resolved: 'light' | 'dark' = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', resolved === 'dark');
+    const root = document.documentElement;
+    root.classList.toggle('dark', resolved === 'dark');
+    root.style.colorScheme = resolved;
   }, [resolved]);
 
   const setMode = useCallback((next: ThemeMode) => {
