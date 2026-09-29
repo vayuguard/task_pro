@@ -141,20 +141,48 @@
 @layer components {
   .panel {
     background-color: var(--surface-raised);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     border-radius: 0.85rem;
-    box-shadow: var(--elevation-1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.55),
+      inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+      0 1px 0 rgba(15, 23, 42, 0.04),
+      0 8px 18px rgba(15, 23, 42, 0.08),
+      0 2px 4px rgba(15, 23, 42, 0.05);
+    transform: translateZ(0);
+  }
+
+  .panel-3d {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      inset 0 -2px 0 rgba(15, 23, 42, 0.08),
+      0 10px 22px rgba(15, 23, 42, 0.1),
+      0 3px 6px rgba(15, 23, 42, 0.06);
+  }
+
+  .dark .panel,
+  .dark .panel-3d {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 10px 24px rgba(0, 0, 0, 0.45),
+      0 2px 4px rgba(0, 0, 0, 0.35);
   }
 
   .panel-interactive {
     background-color: var(--surface-raised);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     border-radius: 0.85rem;
-    box-shadow: var(--elevation-1);
-    transition: box-shadow 0.22s ease, border-color 0.22s ease, transform 0.22s ease;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 6px 14px rgba(15, 23, 42, 0.08);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
   }
   .panel-interactive:hover {
-    box-shadow: var(--elevation-2);
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      0 14px 28px rgba(15, 23, 42, 0.12);
     border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   }
 
@@ -166,28 +194,39 @@
     @apply opacity-50 cursor-not-allowed;
   }
   .btn:not(:disabled):active {
-    transform: translateY(1px) scale(0.985);
+    transform: translateY(2px);
+    box-shadow: inset 0 2px 4px rgba(15, 23, 42, 0.18);
   }
 
   .btn-primary {
     @apply text-white px-4 py-2.5;
-    background-color: var(--accent);
-    box-shadow: 0 1px 2px rgba(13, 148, 136, 0.3);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white), var(--accent));
+    border: 1px solid color-mix(in srgb, var(--accent) 70%, #0f172a);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 4px 0 color-mix(in srgb, var(--accent) 55%, #0f172a),
+      0 8px 16px color-mix(in srgb, var(--accent) 28%, transparent);
   }
   .btn-primary:not(:disabled):hover {
-    background-color: var(--accent-hover);
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 88%, white), var(--accent-hover));
+  }
+  .btn-primary:not(:disabled):active {
+    box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.28);
   }
 
   .btn-secondary {
     @apply px-4 py-2.5;
-    background-color: var(--surface-raised);
+    background: linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
     color: var(--ink);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.55),
+      0 3px 0 rgba(15, 23, 42, 0.06),
+      0 6px 12px rgba(15, 23, 42, 0.06);
   }
   .btn-secondary:not(:disabled):hover {
-    background-color: var(--surface-sunken);
     border-color: var(--border-strong);
+    filter: brightness(0.99);
   }
 
   .btn-ghost {
@@ -201,17 +240,25 @@
 
   .btn-danger {
     @apply text-white px-4 py-2.5;
-    background-color: var(--danger);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 88%, white), var(--danger));
+    border: 1px solid color-mix(in srgb, var(--danger) 65%, #0f172a);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 3px 0 color-mix(in srgb, var(--danger) 50%, #0f172a);
   }
   .btn-danger:not(:disabled):hover {
-    filter: brightness(1.08);
+    filter: brightness(1.05);
   }
 
   .input {
     @apply w-full rounded-lg px-3 py-2.5 text-sm;
-    background-color: var(--surface-raised);
+    background: linear-gradient(180deg, var(--surface-sunken), var(--surface-raised));
     color: var(--ink);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
+    box-shadow:
+      inset 0 2px 4px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(15, 23, 42, 0.04),
+      0 1px 0 rgba(255, 255, 255, 0.4);
     transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
   }
   .input::placeholder {
@@ -220,7 +267,9 @@
   .input:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    box-shadow:
+      inset 0 2px 4px rgba(15, 23, 42, 0.08),
+      0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
   .label {
@@ -230,25 +279,91 @@
 
   .chip {
     @apply inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     color: var(--ink-muted);
-    background-color: var(--surface-raised);
+    background: linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 2px 0 rgba(15, 23, 42, 0.06);
     transition: all 0.18s ease;
   }
   .chip:hover {
-    border-color: var(--border-strong);
     color: var(--ink);
+    transform: translateY(-1px);
   }
   .chip-active {
-    background-color: var(--accent);
-    border-color: var(--accent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 90%, white), var(--accent));
+    border-color: color-mix(in srgb, var(--accent) 70%, #0f172a);
     color: #fff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      0 3px 0 color-mix(in srgb, var(--accent) 50%, #0f172a);
+  }
+
+  .table-3d thead tr {
+    background: linear-gradient(180deg, var(--surface-sunken), var(--surface-raised));
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .row-3d {
+    border-bottom: 1px solid var(--border);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .row-3d:hover {
+    background-color: color-mix(in srgb, var(--accent-soft) 45%, var(--surface-raised));
+  }
+  .cell-3d {
+    box-shadow: inset 0 -1px 0 transparent;
+  }
+
+  .calendar-day {
+    @apply text-sm font-semibold rounded-lg py-2 cursor-pointer;
+    color: var(--ink);
+    background: linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
+    border: 1px solid var(--border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 0 rgba(15, 23, 42, 0.05);
+  }
+  .calendar-day:hover {
+    border-color: var(--border-strong);
+  }
+  .calendar-day-marked {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--accent);
+  }
+  .calendar-day-active {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
+    border-color: color-mix(in srgb, var(--accent) 65%, #0f172a);
+    color: #fff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 3px 0 color-mix(in srgb, var(--accent) 45%, #0f172a);
+  }
+
+  .login-stage {
+    background:
+      radial-gradient(ellipse 70% 50% at 20% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+      radial-gradient(ellipse 55% 45% at 90% 10%, color-mix(in srgb, var(--info) 12%, transparent), transparent),
+      var(--surface);
+  }
+  .login-stage-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 32px 32px;
+    opacity: 0.35;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black, transparent);
+  }
+  .logo-3d {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),
+      0 10px 24px rgba(15, 23, 42, 0.18),
+      0 3px 0 rgba(15, 23, 42, 0.08);
   }
 
   .sidebar {
     background-color: var(--sidebar-bg);
     color: var(--sidebar-fg);
     border-right: 1px solid var(--sidebar-border);
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.12);
     transition: background-color 0.4s ease, border-color 0.4s ease;
   }
   .sidebar-divider {

@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext';
 import { apiGetAttendance } from '../api/client';
 import { PageHeader, Panel } from '../components/ui/Panel';
 import { PageLoading } from '../components/ui/Skeleton';
+import { DateCalendar } from '../components/ui/DateCalendar';
 import { formatTimeIST, nowTimestamp } from '../utils/time';
 
 type AttendanceRow = {
@@ -54,7 +55,7 @@ export default function AttendancePage() {
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [rows]);
 
-  const days = useMemo(() => [...new Set(rows.map((r) => r.date))].sort((a, b) => b.localeCompare(a)), [rows]);
+  const markedDays = useMemo(() => new Set(rows.map((r) => r.date)), [rows]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -78,79 +79,76 @@ export default function AttendancePage() {
       />
       {error && <p className="text-sm text-danger">{error}</p>}
 
-      <div className="flex flex-wrap gap-3">
-        {isAdmin && (
-          <label className="text-xs font-semibold text-ink-muted flex items-center gap-2">
-            Employee
-            <select
-              className="input w-auto py-1.5 px-3"
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-            >
-              <option value="all">All</option>
-              {employees.map(([email, name]) => (
-                <option key={email} value={email}>
-                  {name} ({email})
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label className="text-xs font-semibold text-ink-muted flex items-center gap-2">
-          Date
-          <select className="input w-auto py-1.5 px-3" value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
-            <option value="all">All days</option>
-            {days.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <Panel padded={false}>
-        {filtered.length === 0 ? (
-          <p className="p-4 text-sm text-ink-muted">No attendance records yet.</p>
-        ) : (
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-sm min-w-[960px]">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-ink-muted border-b border-border">
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Name</th>
-                  <th className="p-3">Email</th>
-                  <th className="p-3">Login time</th>
-                  <th className="p-3">Login location</th>
-                  <th className="p-3">Office enter</th>
-                  <th className="p-3">Logout / auto-logout</th>
-                  <th className="p-3">Office leave</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id} className="border-b border-border last:border-0 align-top">
-                    <td className="p-3 tabular-nums whitespace-nowrap">{r.date}</td>
-                    <td className="p-3 font-medium whitespace-nowrap">{r.name}</td>
-                    <td className="p-3 text-ink-muted text-xs">{r.email}</td>
-                    <td className="p-3 tabular-nums whitespace-nowrap">
-                      <div>{fmtWhen(r.loginAt)}</div>
-                      <div className="text-[11px] text-ink-faint">{fmtClock(r.loginAt)}</div>
-                    </td>
-                    <td className="p-3 text-xs text-ink-muted max-w-[16rem]">
-                      {r.loginLocation?.label ||
-                        (r.locationStatus === 'unavailable' ? 'Not recorded' : '—')}
-                    </td>
-                    <td className="p-3 tabular-nums whitespace-nowrap">{fmtWhen(r.officeEnterAt)}</td>
-                    <td className="p-3 tabular-nums whitespace-nowrap">{fmtWhen(r.logoutAt)}</td>
-                    <td className="p-3 tabular-nums whitespace-nowrap">{fmtWhen(r.officeLeaveAt)}</td>
-                  </tr>
+      <div className="grid lg:grid-cols-[280px_1fr] gap-4 items-start">
+        <div className="space-y-3">
+          {isAdmin && (
+            <label className="block text-xs font-semibold text-ink-muted">
+              Employee
+              <select
+                className="input mt-1.5"
+                value={employeeFilter}
+                onChange={(e) => setEmployeeFilter(e.target.value)}
+              >
+                <option value="all">All employees</option>
+                {employees.map(([email, name]) => (
+                  <option key={email} value={email}>
+                    {name} ({email})
+                  </option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </label>
+          )}
+          <div>
+            <p className="text-xs font-semibold text-ink-muted mb-1.5">
+              Date {dayFilter !== 'all' ? `· ${dayFilter}` : '· all'}
+            </p>
+            <DateCalendar value={dayFilter} onChange={setDayFilter} markedDays={markedDays} />
           </div>
-        )}
-      </Panel>
+        </div>
+
+        <Panel padded={false} className="panel-3d overflow-hidden">
+          {filtered.length === 0 ? (
+            <p className="p-4 text-sm text-ink-muted">No attendance records for this filter.</p>
+          ) : (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-sm min-w-[960px] table-3d">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Name</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">Login time</th>
+                    <th className="p-3">Login location</th>
+                    <th className="p-3">Office enter</th>
+                    <th className="p-3">Logout / auto-logout</th>
+                    <th className="p-3">Office leave</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r) => (
+                    <tr key={r.id} className="row-3d">
+                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{r.date}</td>
+                      <td className="p-3 font-medium whitespace-nowrap cell-3d">{r.name}</td>
+                      <td className="p-3 text-ink-muted text-xs cell-3d">{r.email}</td>
+                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">
+                        <div>{fmtWhen(r.loginAt)}</div>
+                        <div className="text-[11px] text-ink-faint">{fmtClock(r.loginAt)}</div>
+                      </td>
+                      <td className="p-3 text-xs text-ink-muted max-w-[16rem] cell-3d">
+                        {r.loginLocation?.label ||
+                          (r.locationStatus === 'unavailable' ? 'Not recorded' : '—')}
+                      </td>
+                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{fmtWhen(r.officeEnterAt)}</td>
+                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{fmtWhen(r.logoutAt)}</td>
+                      <td className="p-3 tabular-nums whitespace-nowrap cell-3d">{fmtWhen(r.officeLeaveAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

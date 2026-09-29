@@ -12,7 +12,6 @@ import { Button } from '../components/ui/Button';
 import { getTaskHours } from '../utils/taskDisplay';
 import { ProgressBar, ProgressRing } from '../components/ui/Progress';
 import { formatLongDateIST, startOfIstDay } from '../utils/time';
-import { DashboardScene } from '../components/scene/AttendanceScene';
 import type { TaskStatus } from '../types';
 
 const STATUS_ORDER: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
@@ -150,39 +149,33 @@ export default function HomePage() {
   const donePct = visibleTasks.length ? Math.round((done.length / visibleTasks.length) * 100) : 0;
   const loggedHours = visibleTasks.reduce((sum, t) => sum + getTaskHours(t), 0);
   const focusTask = inProgress[0] || null;
-  const dashTone = focusTask ? 'live' : overdue.length ? 'idle' : 'office';
 
   return (
     <div className="space-y-6">
-      <div className="grid lg:grid-cols-[1fr_180px] gap-4 items-stretch">
-        <PageHeader
-          eyebrow={formatLongDateIST()}
-          title={isAdmin ? 'Team dashboard' : `Hi, ${session?.profile.name.split(' ')[0] ?? 'there'}`}
-          subtitle={
-            isAdmin
-              ? `${teamMembers.length} team members · ${visibleTasks.length} tasks · Sunday weekly off`
-              : `${open.length} open · ${inProgress.length} in motion · ${overdue.length} overdue`
-          }
-          action={
-            <>
-              <Link to="/attendance" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
-                <span className="material-symbols-outlined text-[18px]">fingerprint</span>
-                Attendance
-              </Link>
-              <Link to="/tasks" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
-                <span className="material-symbols-outlined text-[18px]">checklist</span>
-                View all tasks
-              </Link>
-              <Button variant="primary" icon="add" onClick={openCreateTask}>
-                New task
-              </Button>
-            </>
-          }
-        />
-        <div className="hidden lg:block relative rounded-2xl overflow-hidden min-h-[120px] border border-border">
-          <DashboardScene tone={dashTone} className="absolute inset-0 h-full w-full" />
-        </div>
-      </div>
+      <PageHeader
+        eyebrow={formatLongDateIST()}
+        title={isAdmin ? 'Team dashboard' : `Hi, ${session?.profile.name.split(' ')[0] ?? 'there'}`}
+        subtitle={
+          isAdmin
+            ? `${teamMembers.length} team members · ${visibleTasks.length} tasks · Sunday weekly off`
+            : `${open.length} open · ${inProgress.length} in motion · ${overdue.length} overdue`
+        }
+        action={
+          <>
+            <Link to="/attendance" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
+              <span className="material-symbols-outlined text-[18px]">fingerprint</span>
+              Attendance
+            </Link>
+            <Link to="/tasks" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
+              <span className="material-symbols-outlined text-[18px]">checklist</span>
+              View all tasks
+            </Link>
+            <Button variant="primary" icon="add" onClick={openCreateTask}>
+              New task
+            </Button>
+          </>
+        }
+      />
 
       {focusTask && (
         <motion.div

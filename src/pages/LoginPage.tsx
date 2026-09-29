@@ -4,7 +4,6 @@ import { motion } from 'motion/react';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { LoginScene } from '../components/scene/LoginScene';
 import type { GeoPoint } from '../api/client';
 
 export default function LoginPage() {
@@ -49,28 +48,27 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden">
-      <LoginScene className="absolute inset-0" />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/35 to-surface/90 pointer-events-none" />
+    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden login-stage">
+      <div className="login-stage-grid pointer-events-none" aria-hidden />
       <motion.div
         className="relative z-10 w-full max-w-md"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
       >
         <div className="text-center mb-8">
           <img
             src="/Team_Task_Pro.png"
             alt="TaskPro"
-            className="mx-auto h-16 w-16 rounded-2xl object-contain shadow-lg ring-1 ring-white/20"
+            className="mx-auto h-16 w-16 rounded-2xl object-contain logo-3d"
           />
-          <h1 className="font-display text-3xl font-semibold text-white mt-4 drop-shadow">TaskPro</h1>
-          <p className="text-sm text-white/75 mt-2">Sign in to your workspace</p>
-          <p className="text-xs text-white/55 mt-2">
+          <h1 className="font-display text-3xl font-semibold text-ink mt-4">TaskPro</h1>
+          <p className="text-sm text-ink-muted mt-2">Sign in to your workspace</p>
+          <p className="text-xs text-ink-faint mt-2">
             Employee windows: 9:00–10:00 AM &amp; 1:30–2:30 PM IST · Sunday weekly off
           </p>
         </div>
-        <form onSubmit={onSubmit} className="panel p-6 space-y-4 shadow-float backdrop-blur-sm">
+        <form onSubmit={onSubmit} className="panel panel-3d p-6 space-y-4">
           {error && (
             <div className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-lg px-3 py-2">{error}</div>
           )}
