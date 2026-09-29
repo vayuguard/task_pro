@@ -14,29 +14,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [locStatus, setLocStatus] = useState('');
 
   const readLocation = (): Promise<GeoPoint | undefined> =>
     new Promise((resolve) => {
       if (!navigator.geolocation) {
-        setLocStatus('Location unavailable on this device');
         resolve(undefined);
         return;
       }
-      setLocStatus('Recording exact location…');
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLocStatus('Location captured');
+        (pos) =>
           resolve({
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy
-          });
-        },
-        () => {
-          setLocStatus('Signed in without GPS — location not recorded');
-          resolve(undefined);
-        },
+          }),
+        () => resolve(undefined),
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     });
@@ -73,7 +65,7 @@ export default function LoginPage() {
             className="mx-auto h-16 w-16 rounded-2xl object-contain shadow-lg ring-1 ring-white/20"
           />
           <h1 className="font-display text-3xl font-semibold text-white mt-4 drop-shadow">TaskPro</h1>
-          <p className="text-sm text-white/75 mt-2">Sign in from anywhere — we record your exact location</p>
+          <p className="text-sm text-white/75 mt-2">Sign in to your workspace</p>
           <p className="text-xs text-white/55 mt-2">
             Employee windows: 9:00–10:00 AM &amp; 1:30–2:30 PM IST · Sunday weekly off
           </p>
@@ -82,7 +74,6 @@ export default function LoginPage() {
           {error && (
             <div className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-lg px-3 py-2">{error}</div>
           )}
-          {locStatus && <p className="text-xs text-ink-muted">{locStatus}</p>}
           <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
           <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
           <Button type="submit" className="w-full" loading={loading}>
