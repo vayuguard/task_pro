@@ -224,32 +224,23 @@ export async function apiGetLoginLog(limit = 50): Promise<{
   return request(`/login-log?limit=${limit}`);
 }
 
-export async function apiGetAttendanceToday(): Promise<{
+export async function apiGetAttendance(days = 30): Promise<{
   ok: true;
-  day: string;
-  sundayOff: boolean;
+  days: number;
   rows: Array<{
-    email: string;
-    name: string;
-    enterAt: string;
-    exitAt: string | null;
-    enterLocation: GeoPoint | null;
-    locationStatus: string;
-    insideOffice: boolean;
-    officeDistanceM: number | null;
-    liveTask: { id: string; title: string } | null;
-  }>;
-  events: Array<{
     id: string;
-    kind: 'office_enter' | 'office_leave';
+    date: string;
     email: string;
     name: string;
-    at: string;
-    location: GeoPoint | null;
-    officeLabel: string;
+    loginAt: string | null;
+    loginLocation: GeoPoint | null;
+    locationStatus: string;
+    officeEnterAt: string | null;
+    logoutAt: string | null;
+    officeLeaveAt: string | null;
   }>;
 }> {
-  return request('/attendance/today');
+  return request(`/attendance?days=${days}`);
 }
 
 export async function apiPresencePing(location: GeoPoint): Promise<{

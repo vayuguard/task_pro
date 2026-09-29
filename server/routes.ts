@@ -1163,108 +1163,90 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get('/attendance/today', requireAuth, async (req: AuthedRequest, res: Response) => {
+  router.get('/attendance', requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
       const session = req.session!;
       const isAdmin = session.role === 'admin';
-      const now = new Date();
-      const istParts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Kolkata',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).formatToParts(now);
-      const y = istParts.find((p) => p.type === 'year')?.value;
-      const m = istParts.find((p) => p.type === 'month')?.value;
-      const d = istParts.find((p) => p.type === 'day')?.value;
-      const dayKey = `${y}-${m}-${d}`;
-      // IST day bounds in UTC: midnight IST = 18:30 previous UTC
-      const dayStart = new Date(`${dayKey}T00:00:00+05:30`);
-      const dayEnd = new Date(`${dayKey}T23:59:59.999+05:30`);
+      const days = Math.min(60, Math.max(7, Number(req.query.days) || 30));
+      const since = new Date();
+      since.setDate(since.getDate() - days);
 
-      const loginFilter = isAdmin
+      const loginQuery = isAdmin
         ? {
-            $or: [
-              { enterAt: { $gte: dayStart, $lte: dayEnd } },
-              { loginAt: { $gte: dayStart, $lte: dayEnd } }
-            ]
+            $or: [{ enterAt: { $gte: since } }, { loginAt: { $gte: since } }]
           }
         : {
             email: session.email.toLowerCase(),
-            $or: [
-              { enterAt: { $gte: dayStart, $lte: dayEnd } },
-              { loginAt: { $gte: dayStart, $lte: dayEnd } }
-            ]
+            $or: [{ enterAt: { $gte: since } }, { loginAt: { $gte: since } }]
           };
-      const eventFilter = isAdmin
-        ? { at: { $gte: dayStart, $lte: dayEnd } }
-        : { email: session.email.toLowerCase(), at: { $gte: dayStart, $lte: dayEnd } };
+      const eventQuery = isAdmin
+        ? { at: { $gte: since } }
+        : { email: session.email.toLowerCase(), at: { $gte: since } };
 
-      const [logins, events, presence, tasks] = await Promise.all([
-        getDb().collection('login_log').find(loginFilter).sort({ enterAt: -1 }).toArray(),
-        getDb().collection('location_events').find(eventFilter).sort({ at: -1 }).toArray(),
-        isAdmin
-          ? getDb().collection('presence_state').find({}).toArray()
-          : getDb().collection('presence_state').find({ email: session.email.toLowerCase() }).toArray(),
-        getDb()
-          .collection('tasks')
-          .find({ status: 'In Progress', archivedAt: { $exists: false } })
-          .toArray()
+      const [logins, events] = await Promise.all([
+        getDb().collection('login_log').find(loginQuery).sort({ enterAt: -1, loginAt: -1 }).limit(500).toArray(),
+        getDb().collection('location_events').find(eventQuery).sort({ at: 1 }).toArray()
       ]);
 
-      const liveByEmail = new Map<string, { id: string; title: string }>();
-      for (const t of tasks) {
-        const email = String((t.assignee as { email?: string })?.email || '').toLowerCase();
-        if (!email || liveByEmail.has(email)) continue;
-        if ((t as { timerPaused?: boolean }).timerPaused) continue;
-        liveByEmail.set(email, { id: String(t.id), title: String(t.title) });
+      const istDayKey = (value: Date | string | undefined | null) => {
+        if (!value) return '';
+        const d = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(d.getTime())) return '';
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(d);
+      };
+
+      const eventsByEmailDay = new Map<string, Array<{ kind: string; at: Date }>>();
+      for (const ev of events) {
+        const email = String(ev.email || '').toLowerCase();
+        const day = istDayKey(ev.at as Date);
+        if (!email || !day) continue;
+        const key = `${email}|${day}`;
+        const list = eventsByEmailDay.get(key) || [];
+        list.push({ kind: String(ev.kind), at: ev.at instanceof Date ? ev.at : new Date(String(ev.at)) });
+        eventsByEmailDay.set(key, list);
       }
 
-      const presenceByEmail = new Map(
-        presence.map((p) => [String(p.email || '').toLowerCase(), p] as const)
-      );
-
       const rows = [];
-      const seen = new Set<string>();
       for (const login of logins) {
         const email = String(login.email || '').toLowerCase();
-        if (seen.has(email)) continue;
-        seen.add(email);
+        const loginAt = (login.enterAt || login.loginAt) as Date | undefined;
+        const day = istDayKey(loginAt);
+        if (!email || !day) continue;
         const enterLocation = await withPlaceName(
           login.enterLocation as { lat?: number; lng?: number; label?: string } | null
         );
-        const p = presenceByEmail.get(email);
-        const live = liveByEmail.get(email) || null;
+        const dayEvents = eventsByEmailDay.get(`${email}|${day}`) || [];
+        const officeEnter = dayEvents.find((e) => e.kind === 'office_enter');
+        const officeLeave = [...dayEvents].reverse().find((e) => e.kind === 'office_leave');
         rows.push({
+          id: String(login._id || `${email}-${day}-${loginAt ? new Date(loginAt).getTime() : 0}`),
+          date: day,
           email,
           name: String(login.name || ''),
-          enterAt: login.enterAt || login.loginAt,
-          exitAt: login.exitAt || null,
-          enterLocation,
+          loginAt: loginAt || null,
+          loginLocation: enterLocation,
           locationStatus: enterLocation ? 'recorded' : String(login.locationStatus || 'unavailable'),
-          insideOffice: p?.inside === true,
-          officeDistanceM: typeof p?.lastDistanceM === 'number' ? p.lastDistanceM : null,
-          liveTask: live
+          officeEnterAt: officeEnter?.at || null,
+          logoutAt: login.exitAt || null,
+          officeLeaveAt: officeLeave?.at || null
         });
       }
 
-      const myEvents = events.map((ev) => ({
-        id: String(ev.id || ev._id),
-        kind: ev.kind === 'office_leave' ? 'office_leave' : 'office_enter',
-        email: String(ev.email || ''),
-        name: String(ev.name || ''),
-        at: ev.at,
-        location: ev.location || null,
-        officeLabel: String(ev.officeLabel || 'Office')
-      }));
-
-      res.json({
-        ok: true,
-        day: dayKey,
-        sundayOff: new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }) === 'Sun',
-        rows,
-        events: myEvents
+      rows.sort((a, b) => {
+        const da = String(a.date);
+        const db = String(b.date);
+        if (da !== db) return db.localeCompare(da);
+        const ta = a.loginAt ? new Date(a.loginAt).getTime() : 0;
+        const tb = b.loginAt ? new Date(b.loginAt).getTime() : 0;
+        return tb - ta;
       });
+
+      res.json({ ok: true, days, rows });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
