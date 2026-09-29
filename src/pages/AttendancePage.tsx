@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { apiGetAttendance } from '../api/client';
-import { PageHeader } from '../components/ui/Panel';
+import { PageHeader, Panel } from '../components/ui/Panel';
 import { PageLoading } from '../components/ui/Skeleton';
 import { DateCalendar } from '../components/ui/DateCalendar';
-import { formatTimeIST, nowTimestamp } from '../utils/time';
+import { formatTimeIST } from '../utils/time';
 
 type AttendanceRow = {
   id: string;
@@ -19,28 +19,11 @@ type AttendanceRow = {
   officeLeaveAt: string | null;
 };
 
-function fmtWhen(value: string | null) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return nowTimestamp(d);
-}
-
 function fmtClock(value: string | null) {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   return formatTimeIST(d);
-}
-
-function Field({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-surface-sunken/40 px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-ink-faint">{label}</p>
-      <p className="text-sm font-medium text-ink mt-0.5 break-words">{value}</p>
-      {hint ? <p className="text-[11px] text-ink-faint mt-0.5">{hint}</p> : null}
-    </div>
-  );
 }
 
 export default function AttendancePage() {
@@ -98,7 +81,7 @@ export default function AttendancePage() {
   if (loading) return <PageLoading />;
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <PageHeader
         title="Attendance"
         subtitle={
@@ -111,7 +94,7 @@ export default function AttendancePage() {
 
       <div className="flex flex-wrap gap-3 items-end">
         {isAdmin && (
-          <label className="block text-xs font-semibold text-ink-muted min-w-[12rem] flex-1">
+          <label className="block text-xs font-semibold text-ink-muted w-full sm:w-64">
             Employee
             <select
               className="input mt-1.5"
@@ -132,7 +115,7 @@ export default function AttendancePage() {
           <p className="text-xs font-semibold text-ink-muted mb-1.5">Date</p>
           <button
             type="button"
-            className="btn btn-secondary min-w-[11rem] justify-between gap-3"
+            className="btn btn-secondary min-w-[12rem] justify-between gap-3"
             onClick={() => setCalendarOpen((v) => !v)}
             aria-expanded={calendarOpen}
           >
@@ -143,7 +126,7 @@ export default function AttendancePage() {
             </span>
           </button>
           {calendarOpen && (
-            <div className="absolute left-0 top-full mt-2 z-40 shadow-float">
+            <div className="absolute left-0 top-full mt-2 z-50">
               <DateCalendar
                 value={dayFilter}
                 markedDays={markedDays}
@@ -157,40 +140,55 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="panel panel-3d p-6">
-          <p className="text-sm text-ink-muted">No attendance records for this filter.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((r) => (
-            <article key={r.id} className="panel panel-3d p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-ink">{r.name}</p>
-                  <p className="text-xs text-ink-muted break-all">{r.email}</p>
-                </div>
-                <span className="chip chip-active pointer-events-none">{r.date}</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Field label="Login time" value={fmtWhen(r.loginAt)} hint={fmtClock(r.loginAt)} />
-                <Field label="Logout / auto-logout" value={fmtWhen(r.logoutAt)} hint={fmtClock(r.logoutAt)} />
-                <Field label="Office enter" value={fmtWhen(r.officeEnterAt)} hint={fmtClock(r.officeEnterAt)} />
-                <Field label="Office leave" value={fmtWhen(r.officeLeaveAt)} hint={fmtClock(r.officeLeaveAt)} />
-              </div>
-              <div className="mt-2">
-                <Field
-                  label="Login location"
-                  value={
-                    r.loginLocation?.label ||
-                    (r.locationStatus === 'unavailable' ? 'Not recorded' : '—')
-                  }
-                />
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+      <Panel padded={false} className="panel-3d overflow-hidden">
+        {filtered.length === 0 ? (
+          <p className="p-4 text-sm text-ink-muted">No attendance records for this filter.</p>
+        ) : (
+          <div className="w-full overflow-x-auto">
+            <table className="w-full table-fixed text-sm table-3d">
+              <colgroup>
+                <col className="w-[9%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
+                <col className="w-[10%]" />
+                <col className="w-[21%]" />
+                <col className="w-[10%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+              </colgroup>
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-ink-muted">
+                  <th className="p-2.5 sm:p-3">Date</th>
+                  <th className="p-2.5 sm:p-3">Name</th>
+                  <th className="p-2.5 sm:p-3">Email</th>
+                  <th className="p-2.5 sm:p-3">Login</th>
+                  <th className="p-2.5 sm:p-3">Login location</th>
+                  <th className="p-2.5 sm:p-3">Office enter</th>
+                  <th className="p-2.5 sm:p-3">Logout</th>
+                  <th className="p-2.5 sm:p-3">Office leave</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id} className="row-3d align-top">
+                    <td className="p-2.5 sm:p-3 tabular-nums text-xs cell-3d">{r.date}</td>
+                    <td className="p-2.5 sm:p-3 font-medium text-xs cell-3d break-words">{r.name}</td>
+                    <td className="p-2.5 sm:p-3 text-ink-muted text-xs cell-3d break-all">{r.email}</td>
+                    <td className="p-2.5 sm:p-3 tabular-nums text-xs cell-3d">{fmtClock(r.loginAt)}</td>
+                    <td className="p-2.5 sm:p-3 text-xs text-ink-muted cell-3d break-words leading-snug">
+                      {r.loginLocation?.label ||
+                        (r.locationStatus === 'unavailable' ? 'Not recorded' : '—')}
+                    </td>
+                    <td className="p-2.5 sm:p-3 tabular-nums text-xs cell-3d">{fmtClock(r.officeEnterAt)}</td>
+                    <td className="p-2.5 sm:p-3 tabular-nums text-xs cell-3d">{fmtClock(r.logoutAt)}</td>
+                    <td className="p-2.5 sm:p-3 tabular-nums text-xs cell-3d">{fmtClock(r.officeLeaveAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }
