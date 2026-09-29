@@ -15,6 +15,7 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: 'dashboard' },
   { to: '/tasks', label: 'My tasks', icon: 'checklist' },
   { to: '/board', label: 'Board', icon: 'view_kanban' },
+  { to: '/attendance', label: 'Attendance', icon: 'fingerprint' },
   { to: '/timesheet', label: 'Timesheet', icon: 'schedule' },
   { to: '/performance', label: 'Performance', icon: 'monitoring' },
   { to: '/chat', label: 'Chat', icon: 'forum' },

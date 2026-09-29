@@ -122,26 +122,14 @@ export function createApiRouter(): Router {
         return;
       }
 
-      // Employees may only log in during:
+      // Employees may only log in Mon–Sat during:
       // - 9:00–10:00 AM IST
       // - 1:30–2:30 PM IST
+      // Sunday is weekly off. GPS is recorded when available; not required.
       // Admin can log in any time.
       if (account.role === 'employee') {
         if (isPastLoginWindow()) {
           res.status(403).json({ ok: false, error: employeeLoginBlockedMessage() });
-          return;
-        }
-        if (
-          !location ||
-          typeof location.lat !== 'number' ||
-          typeof location.lng !== 'number' ||
-          !Number.isFinite(location.lat) ||
-          !Number.isFinite(location.lng)
-        ) {
-          res.status(403).json({
-            ok: false,
-            error: 'Employee location permission is required for login.'
-          });
           return;
         }
       }
@@ -172,7 +160,7 @@ export function createApiRouter(): Router {
           : null
       );
 
-      // Record login event for admin visibility.
+      // Record login event for admin visibility (exact place when GPS granted).
       const loginRecord = {
         email: (account.email as string).toLowerCase(),
         name: (account.profile as { name: string }).name,
@@ -181,6 +169,7 @@ export function createApiRouter(): Router {
         enterAt: new Date(),
         enterIp: loginIp,
         enterLocation,
+        locationStatus: enterLocation ? 'recorded' : 'unavailable',
         exitAt: null,
         exitLocation: null,
         sessionId: serverSession.id
@@ -1068,6 +1057,9 @@ export function createApiRouter(): Router {
           enterAt: d.enterAt || d.loginAt,
           enterIp: String(d.enterIp || d.ip || ''),
           enterLocation,
+          locationStatus: enterLocation
+            ? 'recorded'
+            : String(d.locationStatus || 'unavailable'),
           exitAt: d.exitAt || null,
           exitIp: String(d.exitIp || ''),
           exitLocation
@@ -1166,6 +1158,113 @@ export function createApiRouter(): Router {
         });
       }
       res.json({ ok: true, entries });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.get('/attendance/today', requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const session = req.session!;
+      const isAdmin = session.role === 'admin';
+      const now = new Date();
+      const istParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(now);
+      const y = istParts.find((p) => p.type === 'year')?.value;
+      const m = istParts.find((p) => p.type === 'month')?.value;
+      const d = istParts.find((p) => p.type === 'day')?.value;
+      const dayKey = `${y}-${m}-${d}`;
+      // IST day bounds in UTC: midnight IST = 18:30 previous UTC
+      const dayStart = new Date(`${dayKey}T00:00:00+05:30`);
+      const dayEnd = new Date(`${dayKey}T23:59:59.999+05:30`);
+
+      const loginFilter = isAdmin
+        ? {
+            $or: [
+              { enterAt: { $gte: dayStart, $lte: dayEnd } },
+              { loginAt: { $gte: dayStart, $lte: dayEnd } }
+            ]
+          }
+        : {
+            email: session.email.toLowerCase(),
+            $or: [
+              { enterAt: { $gte: dayStart, $lte: dayEnd } },
+              { loginAt: { $gte: dayStart, $lte: dayEnd } }
+            ]
+          };
+      const eventFilter = isAdmin
+        ? { at: { $gte: dayStart, $lte: dayEnd } }
+        : { email: session.email.toLowerCase(), at: { $gte: dayStart, $lte: dayEnd } };
+
+      const [logins, events, presence, tasks] = await Promise.all([
+        getDb().collection('login_log').find(loginFilter).sort({ enterAt: -1 }).toArray(),
+        getDb().collection('location_events').find(eventFilter).sort({ at: -1 }).toArray(),
+        isAdmin
+          ? getDb().collection('presence_state').find({}).toArray()
+          : getDb().collection('presence_state').find({ email: session.email.toLowerCase() }).toArray(),
+        getDb()
+          .collection('tasks')
+          .find({ status: 'In Progress', archivedAt: { $exists: false } })
+          .toArray()
+      ]);
+
+      const liveByEmail = new Map<string, { id: string; title: string }>();
+      for (const t of tasks) {
+        const email = String((t.assignee as { email?: string })?.email || '').toLowerCase();
+        if (!email || liveByEmail.has(email)) continue;
+        if ((t as { timerPaused?: boolean }).timerPaused) continue;
+        liveByEmail.set(email, { id: String(t.id), title: String(t.title) });
+      }
+
+      const presenceByEmail = new Map(
+        presence.map((p) => [String(p.email || '').toLowerCase(), p] as const)
+      );
+
+      const rows = [];
+      const seen = new Set<string>();
+      for (const login of logins) {
+        const email = String(login.email || '').toLowerCase();
+        if (seen.has(email)) continue;
+        seen.add(email);
+        const enterLocation = await withPlaceName(
+          login.enterLocation as { lat?: number; lng?: number; label?: string } | null
+        );
+        const p = presenceByEmail.get(email);
+        const live = liveByEmail.get(email) || null;
+        rows.push({
+          email,
+          name: String(login.name || ''),
+          enterAt: login.enterAt || login.loginAt,
+          exitAt: login.exitAt || null,
+          enterLocation,
+          locationStatus: enterLocation ? 'recorded' : String(login.locationStatus || 'unavailable'),
+          insideOffice: p?.inside === true,
+          officeDistanceM: typeof p?.lastDistanceM === 'number' ? p.lastDistanceM : null,
+          liveTask: live
+        });
+      }
+
+      const myEvents = events.map((ev) => ({
+        id: String(ev.id || ev._id),
+        kind: ev.kind === 'office_leave' ? 'office_leave' : 'office_enter',
+        email: String(ev.email || ''),
+        name: String(ev.name || ''),
+        at: ev.at,
+        location: ev.location || null,
+        officeLabel: String(ev.officeLabel || 'Office')
+      }));
+
+      res.json({
+        ok: true,
+        day: dayKey,
+        sundayOff: new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }) === 'Sun',
+        rows,
+        events: myEvents
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }

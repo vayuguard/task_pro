@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '../auth/AuthContext';
 import { useData } from '../context/DataContext';
@@ -7,6 +7,7 @@ import { PageHeader, Panel } from '../components/ui/Panel';
 import { PageLoading } from '../components/ui/Skeleton';
 import { Button } from '../components/ui/Button';
 import { useToast } from '../context/ToastContext';
+import { ProgressRing } from '../components/ui/Progress';
 
 type Period = '7d' | '30d' | '90d';
 
@@ -34,6 +35,14 @@ function exportCsv(scores: PerformanceScoreDto[], period: Period) {
   a.download = `taskpro-performance-${period}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function meaningOf(score: PerformanceScoreDto): string {
+  if (score.overall == null) return 'Not enough certified completed work yet to score this period.';
+  if (score.confidence === 'low') return 'Early signal only — keep completing certified tasks for a steadier picture.';
+  if (score.overall >= 80) return 'Strong delivery against plan. Keep estimates honest and timers accurate.';
+  if (score.overall >= 60) return 'Solid mid-range performance. Watch overdue work and estimate drift.';
+  return 'Room to improve. Focus on finishing In Progress work within estimates.';
 }
 
 export default function PerformancePage() {
@@ -66,23 +75,27 @@ export default function PerformancePage() {
   }, [period, selectedUser, isAdmin, session?.email, toast]);
 
   const display = score || (teamScores.length === 1 ? teamScores[0] : null);
+  const sortedTeam = useMemo(
+    () => [...teamScores].sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1)),
+    [teamScores]
+  );
 
   return (
     <div>
       <PageHeader
         title="Performance"
-        subtitle="Analytics only — not for salary decisions"
+        subtitle="Analytics only — not for salary decisions · Mon–Sat · Sunday weekly off"
         action={
-          isAdmin && teamScores.length > 0 ? (
-            <Button variant="secondary" onClick={() => exportCsv(teamScores, period)}>
+          isAdmin && sortedTeam.length > 0 ? (
+            <Button variant="secondary" onClick={() => exportCsv(sortedTeam, period)}>
               Export CSV
             </Button>
           ) : undefined
         }
       />
-      <Panel className="mb-6 border-amber-200 bg-amber-50/50">
-        <p className="text-sm text-amber-900">
-          Certified business hours (Mon–Sat 10:00–18:00 IST) · WFH uses the same rules · Legacy tasks excluded
+      <Panel className="mb-6 border-border bg-accent-soft/30">
+        <p className="text-sm text-ink">
+          Scores use certified business hours (Mon–Sat 10:00–18:00 IST). Sunday and holidays credit zero. Legacy tasks are excluded.
         </p>
       </Panel>
       <div className="flex flex-wrap gap-2 mb-6">
@@ -116,28 +129,48 @@ export default function PerformancePage() {
       )}
       {loading ? (
         <PageLoading />
-      ) : isAdmin && !selectedUser && teamScores.length > 0 ? (
+      ) : isAdmin && !selectedUser && sortedTeam.length > 0 ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {teamScores.map((s) => (
-            <div key={s.userId} className="panel p-4">
+          {sortedTeam.map((s) => (
+            <button
+              key={s.userId}
+              type="button"
+              className="panel p-4 text-left hover:border-accent/40 transition-colors"
+              onClick={() => setSelectedUser(s.userId)}
+            >
               <p className="font-semibold">{s.userName}</p>
-              <p className="text-3xl font-bold mt-1">{s.overall ?? '—'}</p>
-              <p className="text-xs text-ink-muted">{s.eligibleTasks} tasks · {s.confidence}</p>
-            </div>
+              <p className="text-3xl font-bold mt-1 tabular-nums">{s.overall ?? '—'}</p>
+              <p className="text-xs text-ink-muted mt-1">
+                {s.eligibleTasks} tasks · {s.confidence} confidence
+              </p>
+              {s.confidence === 'low' && (
+                <p className="text-[10px] font-bold uppercase text-warning mt-2">Low confidence</p>
+              )}
+            </button>
           ))}
         </div>
       ) : display ? (
         <div className="space-y-6">
           <Panel>
-            <p className="text-4xl font-bold">{display.overall ?? '—'}</p>
-            <p className="text-sm text-ink-muted">{display.eligibleTasks} eligible tasks · {display.confidence} confidence</p>
+            <div className="flex flex-wrap items-center gap-6">
+              <ProgressRing value={display.overall ?? 0} size={96} label="Overall" />
+              <div className="min-w-0 flex-1">
+                <p className="text-4xl font-bold tabular-nums">{display.overall ?? '—'}</p>
+                <p className="text-sm text-ink-muted mt-1">
+                  {display.eligibleTasks} eligible tasks · {display.confidence} confidence
+                </p>
+                <p className="text-sm text-ink mt-3">{meaningOf(display)}</p>
+              </div>
+            </div>
           </Panel>
           <div className="grid sm:grid-cols-2 gap-4">
             {display.components.map((c) => (
               <div key={c.id} className="panel p-4">
                 <div className="flex justify-between text-sm font-semibold">
-                  <span>{c.label} ({c.weight}%)</span>
-                  <span>{c.score ?? '—'}</span>
+                  <span>
+                    {c.label} ({c.weight}%)
+                  </span>
+                  <span className="tabular-nums">{c.score ?? '—'}</span>
                 </div>
                 <div className="h-1.5 bg-surface-sunken rounded-full mt-2 overflow-hidden">
                   {(() => {
@@ -154,14 +187,16 @@ export default function PerformancePage() {
                     );
                   })()}
                 </div>
-                <p className="text-xs text-ink-muted mt-1">{c.detail}</p>
+                <p className="text-xs text-ink-muted mt-2">{c.detail}</p>
               </div>
             ))}
           </div>
           <p className="text-xs text-ink-faint">{display.disclaimer}</p>
         </div>
       ) : (
-        <Panel><p className="text-sm text-ink-muted">Insufficient certified completed work in this period.</p></Panel>
+        <Panel>
+          <p className="text-sm text-ink-muted">Insufficient certified completed work in this period.</p>
+        </Panel>
       )}
     </div>
   );

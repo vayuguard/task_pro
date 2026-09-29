@@ -131,6 +131,11 @@ export default function TaskDetailPage() {
         <span>{task.project}</span>
       </nav>
       <PageHeader title={task.title} subtitle={`${task.id} · ${task.assignee.name}`} />
+      <div className="rounded-xl border border-border bg-surface-sunken/50 px-4 py-3 mb-6 text-xs text-ink-muted flex flex-wrap gap-x-4 gap-y-1">
+        <span>Office hours Mon–Sat 10:00–18:00 IST</span>
+        <span>Sunday weekly off (no credited hours)</span>
+        <span>One live In Progress task per person</span>
+      </div>
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Tabs
@@ -370,7 +375,7 @@ export default function TaskDetailPage() {
           <div className="panel p-4">
             <h3 className="text-sm font-semibold mb-2">Time by section</h3>
             <p className="text-[11px] text-ink-faint mb-2">
-              In Motion uses business hours (Mon–Sat 10:00–18:00 IST). Other columns are dwell time.
+              In Motion uses business hours (Mon–Sat 10:00–18:00 IST). Sunday and holidays credit zero. Other columns are dwell time.
             </p>
             <LiveSectionBreakdown task={task} holidayDates={holidayDates} />
           </div>

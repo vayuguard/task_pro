@@ -12,6 +12,7 @@ import { Button } from '../components/ui/Button';
 import { getTaskHours } from '../utils/taskDisplay';
 import { ProgressBar, ProgressRing } from '../components/ui/Progress';
 import { formatLongDateIST, startOfIstDay } from '../utils/time';
+import { DashboardScene } from '../components/scene/AttendanceScene';
 import type { TaskStatus } from '../types';
 
 const STATUS_ORDER: TaskStatus[] = ['To Do', 'In Progress', 'Review', 'Done'];
@@ -148,29 +149,62 @@ export default function HomePage() {
   const { open, done, inProgress, overdue } = groups;
   const donePct = visibleTasks.length ? Math.round((done.length / visibleTasks.length) * 100) : 0;
   const loggedHours = visibleTasks.reduce((sum, t) => sum + getTaskHours(t), 0);
+  const focusTask = inProgress[0] || null;
+  const dashTone = focusTask ? 'live' : overdue.length ? 'idle' : 'office';
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={formatLongDateIST()}
-        title={isAdmin ? 'Team dashboard' : `Hi, ${session?.profile.name.split(' ')[0] ?? 'there'}`}
-        subtitle={
-          isAdmin
-            ? `${teamMembers.length} team members · ${visibleTasks.length} tasks tracked`
-            : `${open.length} open · ${inProgress.length} in motion · ${overdue.length} overdue`
-        }
-        action={
-          <>
-            <Link to="/tasks" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
-              <span className="material-symbols-outlined text-[18px]">checklist</span>
-              View all tasks
+      <div className="grid lg:grid-cols-[1fr_180px] gap-4 items-stretch">
+        <PageHeader
+          eyebrow={formatLongDateIST()}
+          title={isAdmin ? 'Team dashboard' : `Hi, ${session?.profile.name.split(' ')[0] ?? 'there'}`}
+          subtitle={
+            isAdmin
+              ? `${teamMembers.length} team members · ${visibleTasks.length} tasks · Sunday weekly off`
+              : `${open.length} open · ${inProgress.length} in motion · ${overdue.length} overdue`
+          }
+          action={
+            <>
+              <Link to="/attendance" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
+                <span className="material-symbols-outlined text-[18px]">fingerprint</span>
+                Attendance
+              </Link>
+              <Link to="/tasks" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
+                <span className="material-symbols-outlined text-[18px]">checklist</span>
+                View all tasks
+              </Link>
+              <Button variant="primary" icon="add" onClick={openCreateTask}>
+                New task
+              </Button>
+            </>
+          }
+        />
+        <div className="hidden lg:block relative rounded-2xl overflow-hidden min-h-[120px] border border-border">
+          <DashboardScene tone={dashTone} className="absolute inset-0 h-full w-full" />
+        </div>
+      </div>
+
+      {focusTask && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="panel p-4 flex flex-wrap items-center justify-between gap-3 border-accent/30 bg-accent-soft/20"
+        >
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-accent">Focus now</p>
+            <p className="text-sm font-semibold text-ink truncate mt-0.5">{focusTask.title}</p>
+            <p className="text-xs text-ink-muted">{focusTask.project} · {getTaskHours(focusTask).toFixed(1)}h spent</p>
+          </div>
+          <div className="flex gap-2">
+            <Link to={`/tasks/${focusTask.id}`} className="btn btn-primary px-3 py-2 text-sm">
+              Open task
             </Link>
-            <Button variant="primary" icon="add" onClick={openCreateTask}>
-              New task
-            </Button>
-          </>
-        }
-      />
+            <Link to="/board" className="btn btn-secondary px-3 py-2 text-sm">
+              Board
+            </Link>
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat label="Open" value={open.length} icon="inbox" tone="neutral" hint="Not yet done" />

@@ -215,12 +215,41 @@ export async function apiGetLoginLog(limit = 50): Promise<{
     enterAt: string;
     enterIp: string;
     enterLocation: GeoPoint | null;
+    locationStatus?: string;
     exitAt: string | null;
     exitIp: string;
     exitLocation: GeoPoint | null;
   }>;
 }> {
   return request(`/login-log?limit=${limit}`);
+}
+
+export async function apiGetAttendanceToday(): Promise<{
+  ok: true;
+  day: string;
+  sundayOff: boolean;
+  rows: Array<{
+    email: string;
+    name: string;
+    enterAt: string;
+    exitAt: string | null;
+    enterLocation: GeoPoint | null;
+    locationStatus: string;
+    insideOffice: boolean;
+    officeDistanceM: number | null;
+    liveTask: { id: string; title: string } | null;
+  }>;
+  events: Array<{
+    id: string;
+    kind: 'office_enter' | 'office_leave';
+    email: string;
+    name: string;
+    at: string;
+    location: GeoPoint | null;
+    officeLabel: string;
+  }>;
+}> {
+  return request('/attendance/today');
 }
 
 export async function apiPresencePing(location: GeoPoint): Promise<{

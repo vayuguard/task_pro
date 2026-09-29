@@ -44,6 +44,7 @@ export function CommandPalette({
       { id: 'nav-home', label: 'Go to Dashboard', icon: 'dashboard', group: 'Navigation', run: go('/') },
       { id: 'nav-tasks', label: 'Go to My tasks', icon: 'checklist', group: 'Navigation', run: go('/tasks') },
       { id: 'nav-board', label: 'Go to Board', icon: 'view_kanban', group: 'Navigation', run: go('/board') },
+      { id: 'nav-attendance', label: 'Go to Attendance', icon: 'fingerprint', group: 'Navigation', run: go('/attendance') },
       { id: 'nav-perf', label: 'Go to Performance', icon: 'monitoring', group: 'Navigation', run: go('/performance') },
       { id: 'nav-chat', label: 'Go to Chat', icon: 'forum', group: 'Navigation', run: go('/chat') },
       { id: 'nav-timesheet', label: 'Go to Timesheet', icon: 'schedule', group: 'Navigation', run: go('/timesheet') },

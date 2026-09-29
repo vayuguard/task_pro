@@ -22,6 +22,13 @@ import { isWithinBusinessHours } from '../utils/businessTime';
 
 type BoardColumn = 'To Do' | 'In Progress' | 'Paused' | 'Review' | 'Done';
 const columns: BoardColumn[] = ['To Do', 'In Progress', 'Paused', 'Review', 'Done'];
+const COLUMN_HINTS: Record<BoardColumn, string> = {
+  'To Do': 'Drop backlog work here',
+  'In Progress': 'Only one live task per person',
+  Paused: 'Paused timers land here',
+  Review: 'Ready for review',
+  Done: 'Completed work'
+};
 
 function boardColumnOf(task: Task): BoardColumn {
   if (task.status === 'In Progress' && task.timerPaused) return 'Paused';
@@ -82,12 +89,14 @@ function Column({
   id,
   title,
   tasks,
-  holidayDates
+  holidayDates,
+  emptyHint
 }: {
   id: BoardColumn;
   title: string;
   tasks: Task[];
   holidayDates: Set<string>;
+  emptyHint: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const totalHours = tasks.reduce((sum, t) => sum + getTaskHours(t), 0);
@@ -105,9 +114,9 @@ function Column({
           <span className="text-[10px] font-semibold tabular-nums">{totalHours.toFixed(1)}h</span>
         </span>
       </h3>
-      <div className="flex flex-col gap-2 min-h-[120px]">
+      <div className="flex flex-col gap-2 min-h-[120px] max-h-[calc(10*6.25rem+9*0.5rem)] overflow-y-auto custom-scrollbar overscroll-contain pr-0.5">
         {tasks.length === 0 ? (
-          <p className="text-xs text-ink-faint text-center py-8">Drop tasks here</p>
+          <p className="text-xs text-ink-faint text-center py-8 px-1">{emptyHint}</p>
         ) : (
           tasks.map((t) => (
             <div key={t.id}>
@@ -191,7 +200,7 @@ export default function BoardPage() {
     <div>
       <PageHeader
         title="Board"
-        subtitle="Only one live In Progress task per person · starting another auto-moves the current one to Paused"
+        subtitle="One live In Progress task per person · Mon–Sat 10:00–18:00 IST · Sunday weekly off"
       />
       <DndContext
         sensors={sensors}
@@ -202,7 +211,13 @@ export default function BoardPage() {
         <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar lg:grid lg:grid-cols-5 lg:overflow-visible">
           {columns.map((col) => (
             <div key={col}>
-              <Column id={col} title={col} tasks={byColumn[col]} holidayDates={holidayDates} />
+              <Column
+                id={col}
+                title={col}
+                tasks={byColumn[col]}
+                holidayDates={holidayDates}
+                emptyHint={COLUMN_HINTS[col]}
+              />
             </div>
           ))}
         </div>

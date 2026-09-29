@@ -60,7 +60,7 @@ export default function TimesheetPage() {
     <div className="space-y-6">
       <PageHeader
         title="Timesheet"
-        subtitle="Certified In Progress hours (Mon–Sat 10:00–18:00 IST, holidays excluded)"
+        subtitle="Certified In Progress hours (Mon–Sat 10:00–18:00 IST · Sunday & holidays excluded)"
       />
       <Panel>
         <form

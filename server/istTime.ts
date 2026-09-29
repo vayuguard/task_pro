@@ -28,25 +28,33 @@ function istMinutes(date: Date = new Date()): number {
   return hour * 60 + minute;
 }
 
+export function isSundayIst(date: Date = new Date()): boolean {
+  return getIstHour(date).weekday === 0;
+}
+
 /**
- * Employee login windows (IST):
+ * Employee login windows (IST), Mon–Sat only:
  * - 9:00 AM – 10:00 AM
  * - 1:30 PM – 2:30 PM
- * Outside these windows only admin may log in.
+ * Sunday is a weekly off. Outside windows only admin may log in.
  */
 export function isEmployeeLoginAllowed(date: Date = new Date()): boolean {
+  if (isSundayIst(date)) return false;
   const mins = istMinutes(date);
   if (mins >= 9 * 60 && mins < 10 * 60) return true;
   if (mins >= 13 * 60 + 30 && mins < 14 * 60 + 30) return true;
   return false;
 }
 
-/** True when employees are outside both login windows. */
+/** True when employees are outside both login windows or it is Sunday. */
 export function isPastLoginWindow(date: Date = new Date()): boolean {
   return !isEmployeeLoginAllowed(date);
 }
 
 export function employeeLoginBlockedMessage(date: Date = new Date()): string {
+  if (isSundayIst(date)) {
+    return 'Sunday is a weekly off. Login opens Monday 9:00 AM–10:00 AM IST.';
+  }
   const mins = istMinutes(date);
   if (mins < 9 * 60) {
     return 'Login opens at 9:00 AM IST. Please try again then.';
@@ -54,7 +62,7 @@ export function employeeLoginBlockedMessage(date: Date = new Date()): string {
   if (mins >= 10 * 60 && mins < 13 * 60 + 30) {
     return 'Morning login closed at 10:00 AM IST. Next window is 1:30 PM–2:30 PM IST.';
   }
-  return 'Login closed after 2:30 PM IST. Next window is tomorrow 9:00 AM–10:00 AM IST.';
+  return 'Login closed after 2:30 PM IST. Next window is tomorrow 9:00 AM–10:00 AM IST (Sunday is off).';
 }
 
 /** True if IST time is at or after 6 PM (session auto-logout). */

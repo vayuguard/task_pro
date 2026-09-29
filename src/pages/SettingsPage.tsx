@@ -285,7 +285,7 @@ export default function SettingsPage() {
           <Panel>
             <h2 className="text-sm font-semibold mb-2">Company holidays</h2>
             <p className="text-xs text-ink-muted mb-4">
-              Holiday dates credit zero In Progress hours. Use YYYY-MM-DD in IST.
+              Holiday dates credit zero In Progress hours. Sunday is always a weekly off (Mon–Sat). Use YYYY-MM-DD in IST.
             </p>
             <form
               className="grid sm:grid-cols-2 gap-3 mb-4"

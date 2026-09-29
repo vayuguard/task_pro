@@ -288,5 +288,15 @@ assert(
   'evening block points to next morning'
 );
 
+// Sunday 20 Sep 2026 is weekly off
+assert(isPastLoginWindow(new Date('2026-09-20T04:00:00.000Z')), 'Sunday 9:30 AM IST login blocked');
+assert(
+  employeeLoginBlockedMessage(new Date('2026-09-20T04:00:00.000Z')).toLowerCase().includes('sunday'),
+  'Sunday block message mentions weekly off'
+);
+const sunStart = new Date('2026-09-20T04:30:00.000Z'); // Sun 10:00 IST
+const sunEnd = new Date('2026-09-20T12:30:00.000Z'); // Sun 18:00 IST
+assert(businessMsBetween(sunStart, sunEnd) === 0, 'Sunday business hours are zero');
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);
