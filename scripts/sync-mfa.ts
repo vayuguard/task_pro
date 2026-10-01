@@ -18,7 +18,7 @@ async function main() {
       },
       $setOnInsert: {
         key: 'app',
-        name: 'TaskPro',
+        name: 'VayuDesk',
         database: 'taskpro_vg',
         seedMode: 'admin-only',
         seededAt: new Date()

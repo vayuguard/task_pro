@@ -1,6 +1,6 @@
 # Deploy notes (Hostinger / Linux VPS)
 
-TaskPro runs on **port 3100** by default (avoids 3000 / 4000 / 8000).
+VayuDesk runs on **port 3100** by default (avoids 3000 / 4000 / 8000).
 
 ## Requirements
 
@@ -74,7 +74,7 @@ pm2 save
 Use the **same Node 20** for PM2:
 
 ```bash
-pm2 delete taskpro 2>/dev/null
+pm2 delete vayudesk 2>/dev/null
 # ensure `which node` is v20, then:
 pm2 start ecosystem.config.cjs
 pm2 save

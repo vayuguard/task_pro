@@ -162,10 +162,12 @@ export default function HomePage() {
         }
         action={
           <>
-            <Link to="/attendance" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
-              <span className="material-symbols-outlined text-[18px]">fingerprint</span>
-              Attendance
-            </Link>
+            {isAdmin && (
+              <Link to="/attendance" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
+                <span className="material-symbols-outlined text-[18px]">fingerprint</span>
+                Attendance
+              </Link>
+            )}
             <Link to="/tasks" className="btn btn-secondary px-4 py-2.5 hidden sm:inline-flex">
               <span className="material-symbols-outlined text-[18px]">checklist</span>
               View all tasks

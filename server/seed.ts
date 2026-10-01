@@ -67,7 +67,7 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
       {
         $set: {
           demoMfaCode: DEMO_MFA_CODE,
-          name: 'TaskPro',
+          name: 'VayuDesk',
           database: 'taskpro_vg',
           updatedAt: new Date()
         },
@@ -125,7 +125,7 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
     id: 'welcome-1',
     channel: '#general',
     sender: admin.profile,
-    text: 'Welcome to TaskPro. Create employees from Settings → Team to invite your team.',
+    text: 'Welcome to VayuDesk. Create employees from Settings → Team to invite your team.',
     timestamp: nowTimestamp(),
     reactions: {},
     createdAt: new Date()
@@ -134,7 +134,7 @@ export async function seedDatabase(db: Db, force = false): Promise<void> {
   // No sample tasks / employees — admin creates them
   await db.collection('meta').insertOne({
     key: 'app',
-    name: 'TaskPro',
+    name: 'VayuDesk',
     database: 'taskpro_vg',
     demoMfaCode: DEMO_MFA_CODE,
     seedMode: 'admin-only',

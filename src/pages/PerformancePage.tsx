@@ -32,7 +32,7 @@ function exportCsv(scores: PerformanceScoreDto[], period: Period) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `taskpro-performance-${period}.csv`;
+  a.download = `vayudesk-performance-${period}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

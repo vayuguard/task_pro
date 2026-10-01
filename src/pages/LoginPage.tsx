@@ -37,6 +37,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     const location = await readLocation();
+    // Employees are rejected server-side without GPS; admin may sign in without it.
     const result = await login(email, password, location);
     setLoading(false);
     if (!result.ok) {
@@ -58,14 +59,14 @@ export default function LoginPage() {
       >
         <div className="text-center mb-8">
           <img
-            src="/Team_Task_Pro.png"
-            alt="TaskPro"
-            className="mx-auto h-16 w-16 rounded-2xl object-contain logo-3d"
+            src="/vayudesk-logo.jpg"
+            alt="VayuDesk"
+            className="mx-auto h-16 w-16 rounded-2xl object-cover logo-3d"
           />
-          <h1 className="font-display text-3xl font-semibold text-ink mt-4">TaskPro</h1>
+          <h1 className="font-display text-3xl font-semibold text-ink mt-4">VayuDesk</h1>
           <p className="text-sm text-ink-muted mt-2">Sign in to your workspace</p>
           <p className="text-xs text-ink-faint mt-2">
-            Employee windows: 9:00–10:00 AM &amp; 1:30–2:30 PM IST · Sunday weekly off
+            Employees need location access · windows 9:00–10:00 AM &amp; 1:30–2:30 PM IST · Sunday off
           </p>
         </div>
         <form onSubmit={onSubmit} className="panel panel-3d p-6 space-y-4">

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { apiGetAttendance } from '../api/client';
 import { PageHeader, Panel } from '../components/ui/Panel';
@@ -38,11 +39,12 @@ export default function AttendancePage() {
   const popRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isAdmin) return;
     apiGetAttendance(45)
       .then((r) => setRows(r.rows))
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load attendance'))
       .finally(() => setLoading(false));
-  }, [session?.userId]);
+  }, [session?.userId, isAdmin]);
 
   useEffect(() => {
     if (!calendarOpen) return;
@@ -78,38 +80,33 @@ export default function AttendancePage() {
 
   const dateLabel = dayFilter === 'all' ? 'All dates' : dayFilter;
 
+  if (!isAdmin) return <Navigate to="/" replace />;
   if (loading) return <PageLoading />;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Attendance"
-        subtitle={
-          isAdmin
-            ? 'Employee-wise daily attendance · login place · office enter/leave · logout'
-            : 'Your daily attendance · login place · office enter/leave · logout'
-        }
+        subtitle="Employee-wise daily attendance · login place · office enter/leave · logout"
       />
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex flex-wrap gap-3 items-end">
-        {isAdmin && (
-          <label className="block text-xs font-semibold text-ink-muted w-full sm:w-64">
-            Employee
-            <select
-              className="input mt-1.5"
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-            >
-              <option value="all">All employees</option>
-              {employees.map(([email, name]) => (
-                <option key={email} value={email}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <label className="block text-xs font-semibold text-ink-muted w-full sm:w-64">
+          Employee
+          <select
+            className="input mt-1.5"
+            value={employeeFilter}
+            onChange={(e) => setEmployeeFilter(e.target.value)}
+          >
+            <option value="all">All employees</option>
+            {employees.map(([email, name]) => (
+              <option key={email} value={email}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="relative" ref={popRef}>
           <p className="text-xs font-semibold text-ink-muted mb-1.5">Date</p>

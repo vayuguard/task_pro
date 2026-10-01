@@ -15,7 +15,7 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: 'dashboard' },
   { to: '/tasks', label: 'My tasks', icon: 'checklist' },
   { to: '/board', label: 'Board', icon: 'view_kanban' },
-  { to: '/attendance', label: 'Attendance', icon: 'fingerprint' },
+  { to: '/attendance', label: 'Attendance', icon: 'fingerprint', admin: true },
   { to: '/timesheet', label: 'Timesheet', icon: 'schedule' },
   { to: '/performance', label: 'Performance', icon: 'monitoring' },
   { to: '/chat', label: 'Chat', icon: 'forum' },
@@ -141,14 +141,14 @@ export const AppLayout = memo(function AppLayout() {
         <div className={`p-5 border-b sidebar-divider ${sidebarCollapsed ? 'text-center px-2' : ''}`}>
           <div className={`flex items-center gap-2.5 ${sidebarCollapsed ? 'justify-center' : ''}`}>
             <img
-              src="/Team_Task_Pro.png"
+              src="/vayudesk-logo.jpg"
               alt=""
-              className={`rounded-lg object-contain shrink-0 ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'}`}
+              className={`rounded-lg object-cover shrink-0 ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'}`}
             />
             {!sidebarCollapsed && (
               <div className="min-w-0">
-                <p className="font-display text-xl font-semibold tracking-tight truncate">TaskPro</p>
-                <p className="text-xs sidebar-muted mt-0.5">Work management</p>
+                <p className="font-display text-xl font-semibold tracking-tight truncate">VayuDesk</p>
+                <p className="text-xs sidebar-muted mt-0.5">by Vayuguard</p>
               </div>
             )}
           </div>

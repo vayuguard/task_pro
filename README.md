@@ -1,6 +1,6 @@
-# TaskPro Enterprise
+# VayuDesk
 
-Team task manager with MongoDB persistence, session-based API auth, automated In Motion time tracking, and balanced performance analytics.
+Vayuguard workplace ops — team tasks, attendance, MongoDB persistence, session auth, and performance analytics.
 
 ## Quick Start
 

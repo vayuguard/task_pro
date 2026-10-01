@@ -41,7 +41,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'TaskPro/1.0 (attendance reverse geocode)'
+        'User-Agent': 'VayuDesk/1.0 (attendance reverse geocode)'
       }
     });
     if (!res.ok) return '';

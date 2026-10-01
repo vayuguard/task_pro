@@ -30,7 +30,7 @@ function assert(condition: boolean, label: string) {
   }
 }
 
-console.log('\nTaskPro smoke tests\n');
+console.log('\nVayuDesk smoke tests\n');
 
 assert(AUTH_ACCOUNTS.length === 1, 'only admin is seeded in AUTH_ACCOUNTS');
 assert(AUTH_ACCOUNTS[0].role === 'admin', 'seeded account is admin');

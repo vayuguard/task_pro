@@ -18,7 +18,7 @@ export interface SendResult {
 function buildHtml(payload: CredentialEmailPayload): string {
   return `
     <div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; padding: 24px;">
-      <h2 style="color: #312e81;">Welcome to TaskPro</h2>
+      <h2 style="color: #0f766e;">Welcome to VayuDesk</h2>
       <p>Hi ${payload.name},</p>
       <p>An admin created your employee account. Use these credentials to sign in:</p>
       <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
@@ -36,21 +36,21 @@ function buildHtml(payload: CredentialEmailPayload): string {
         </tr>
       </table>
       <p style="color: #64748b; font-size: 13px;">Please change your password after first login if your admin requires it.</p>
-      <p>— TaskPro Admin</p>
+      <p>— VayuDesk · Vayuguard</p>
     </div>
   `;
 }
 
 function buildText(payload: CredentialEmailPayload): string {
   return [
-    `Welcome to TaskPro, ${payload.name}!`,
+    `Welcome to VayuDesk, ${payload.name}!`,
     '',
     'Your employee account credentials:',
     `Employee ID: ${payload.employeeId}`,
     `Login (email): ${payload.email}`,
     `Password: ${payload.password}`,
     '',
-    '— TaskPro Admin'
+    '— VayuDesk · Vayuguard'
   ].join('\n');
 }
 
@@ -58,12 +58,12 @@ function buildText(payload: CredentialEmailPayload): string {
 export async function sendEmployeeCredentials(payload: CredentialEmailPayload): Promise<SendResult> {
   const html = buildHtml(payload);
   const text = buildText(payload);
-  const subject = 'Your TaskPro employee account credentials';
+  const subject = 'Your VayuDesk employee account credentials';
 
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'TaskPro <noreply@taskpro.com>';
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'VayuDesk <noreply@vayuguard.com>';
 
   if (host && user && pass) {
     const transporter = nodemailer.createTransport({

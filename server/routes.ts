@@ -125,9 +125,22 @@ export function createApiRouter(): Router {
       // Employees may only log in Mon–Sat during:
       // - 9:00–10:00 AM IST
       // - 1:30–2:30 PM IST
-      // Sunday is weekly off. GPS is recorded when available; not required.
-      // Admin can log in any time.
+      // Sunday is weekly off. GPS is required for employees.
+      // Admin can log in any time without location.
+      const hasLocation =
+        typeof location?.lat === 'number' &&
+        typeof location?.lng === 'number' &&
+        Number.isFinite(location.lat) &&
+        Number.isFinite(location.lng);
+
       if (account.role === 'employee') {
+        if (!hasLocation) {
+          res.status(403).json({
+            ok: false,
+            error: 'Location permission is required to sign in. Enable location access and try again.'
+          });
+          return;
+        }
         if (isPastLoginWindow()) {
           res.status(403).json({ ok: false, error: employeeLoginBlockedMessage() });
           return;
@@ -1163,25 +1176,16 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get('/attendance', requireAuth, async (req: AuthedRequest, res: Response) => {
+  router.get('/attendance', requireAuth, requireAdmin, async (_req: AuthedRequest, res: Response) => {
     try {
-      const session = req.session!;
-      const isAdmin = session.role === 'admin';
-      const days = Math.min(60, Math.max(7, Number(req.query.days) || 30));
+      const days = Math.min(60, Math.max(7, Number(_req.query.days) || 30));
       const since = new Date();
       since.setDate(since.getDate() - days);
 
-      const loginQuery = isAdmin
-        ? {
-            $or: [{ enterAt: { $gte: since } }, { loginAt: { $gte: since } }]
-          }
-        : {
-            email: session.email.toLowerCase(),
-            $or: [{ enterAt: { $gte: since } }, { loginAt: { $gte: since } }]
-          };
-      const eventQuery = isAdmin
-        ? { at: { $gte: since } }
-        : { email: session.email.toLowerCase(), at: { $gte: since } };
+      const loginQuery = {
+        $or: [{ enterAt: { $gte: since } }, { loginAt: { $gte: since } }]
+      };
+      const eventQuery = { at: { $gte: since } };
 
       const [logins, events] = await Promise.all([
         getDb().collection('login_log').find(loginQuery).sort({ enterAt: -1, loginAt: -1 }).limit(500).toArray(),

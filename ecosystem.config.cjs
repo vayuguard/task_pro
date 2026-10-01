@@ -4,14 +4,14 @@
  *
  * Usage:
  *   npm run build
- *   pm2 delete taskpro
+ *   pm2 delete vayudesk
  *   pm2 start ecosystem.config.cjs
  *   pm2 save
  */
 module.exports = {
   apps: [
     {
-      name: 'taskpro',
+      name: 'vayudesk',
       script: './node_modules/.bin/tsx',
       args: 'server.ts',
       cwd: __dirname,

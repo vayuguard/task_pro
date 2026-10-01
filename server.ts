@@ -53,7 +53,7 @@ async function start() {
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[server] TaskPro running on http://localhost:${PORT}`);
+    console.log(`[server] VayuDesk running on http://localhost:${PORT}`);
     console.log(`[server] Mode: ${isProd ? 'production (serving dist)' : 'development (vite)'}`);
     console.log(`[server] MongoDB database: ${DB_NAME}`);
     console.log(`[server] API: http://localhost:${PORT}/api/health`);
@@ -62,7 +62,7 @@ async function start() {
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       console.error(`\n[server] Port ${PORT} is already in use.`);
-      console.error(`[server] Another TaskPro/Vite instance is probably still running.`);
+      console.error(`[server] Another VayuDesk/Vite instance is probably still running.`);
       console.error(`[server] Fix (PowerShell):`);
       console.error(
         `  Get-NetTCPConnection -LocalPort ${PORT} | Select-Object OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`

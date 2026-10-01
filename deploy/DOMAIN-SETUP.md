@@ -1,4 +1,4 @@
-# Point teamtasks.vayuguard.com at TaskPro (port 3100)
+# Point teamtasks.vayuguard.com at VayuDesk (port 3100)
 
 ## 1) DNS (Hostinger domain panel)
 
@@ -119,6 +119,6 @@ In Atlas → **Network Access**, allow your VPS public IP (or the IP ranges you 
 | Problem | Check |
 |---------|--------|
 | DNS not resolving | A record `teamtasks` → VPS IP; wait for propagation |
-| 502 Bad Gateway | `pm2 status` / `pm2 logs taskpro` — app must listen on 3100 |
+| 502 Bad Gateway | `pm2 status` / `pm2 logs vayudesk` — app must listen on 3100 |
 | Connection refused | Firewall 80/443; Nginx running: `sudo systemctl status nginx` |
 | Wrong site | Another Nginx `server_name` catching the host; disable default site if needed: `sudo rm /etc/nginx/sites-enabled/default` |
